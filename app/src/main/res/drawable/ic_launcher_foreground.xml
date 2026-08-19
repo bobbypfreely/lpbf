@@ -1,0 +1,38 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+	android:width="108dp"
+	android:height="108dp"
+	android:viewportWidth="108"
+	android:viewportHeight="108">
+
+	<!-- Simple placeholder: 3x3 launchpad-style button grid, centered in the 66dp safe zone -->
+	<path
+		android:fillColor="#E94560"
+		android:pathData="M30,30 h14 v14 h-14 z" />
+	<path
+		android:fillColor="#00ADB5"
+		android:pathData="M47,30 h14 v14 h-14 z" />
+	<path
+		android:fillColor="#E94560"
+		android:pathData="M64,30 h14 v14 h-14 z" />
+
+	<path
+		android:fillColor="#00ADB5"
+		android:pathData="M30,47 h14 v14 h-14 z" />
+	<path
+		android:fillColor="#F5F5F5"
+		android:pathData="M47,47 h14 v14 h-14 z" />
+	<path
+		android:fillColor="#00ADB5"
+		android:pathData="M64,47 h14 v14 h-14 z" />
+
+	<path
+		android:fillColor="#E94560"
+		android:pathData="M30,64 h14 v14 h-14 z" />
+	<path
+		android:fillColor="#00ADB5"
+		android:pathData="M47,64 h14 v14 h-14 z" />
+	<path
+		android:fillColor="#E94560"
+		android:pathData="M64,64 h14 v14 h-14 z" />
+
+</vector>
