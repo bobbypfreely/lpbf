@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+	android:layout_width="match_parent"
+	android:layout_height="match_parent"
+	android:orientation="vertical"
+	android:padding="16dp">
+
+	<Button
+		android:id="@+id/importButton"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:text="Import Track" />
+
+	<TextView
+		android:id="@+id/connectionText"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="8dp"
+		android:text="No Launchpad connected \u2014 using on-screen grid"
+		android:textSize="13sp" />
+
+	<TextView
+		android:id="@+id/statusText"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="4dp"
+		android:text="Import a track to begin."
+		android:textSize="15sp" />
+
+	<com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
+		android:id="@+id/padGrid"
+		android:layout_width="match_parent"
+		android:layout_height="0dp"
+		android:layout_marginTop="16dp"
+		android:layout_weight="1" />
+
+</LinearLayout>

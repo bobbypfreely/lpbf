@@ -16,9 +16,22 @@ import java.nio.ByteBuffer
  */
 object AudioDecoder {
 
+	/** Decodes from a content Uri (what a SAF file picker returns) via a ParcelFileDescriptor. */
+	fun decode(context: android.content.Context, uri: android.net.Uri): DecodedAudio {
+		val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+			?: error("Could not open file descriptor for $uri")
+		pfd.use {
+			return decodeInternal { extractor -> extractor.setDataSource(it.fileDescriptor) }
+		}
+	}
+
 	fun decode(filePath: String): DecodedAudio {
+		return decodeInternal { extractor -> extractor.setDataSource(filePath) }
+	}
+
+	private fun decodeInternal(setSource: (MediaExtractor) -> Unit): DecodedAudio {
 		val extractor = MediaExtractor()
-		extractor.setDataSource(filePath)
+		setSource(extractor)
 
 		var trackIndex = -1
 		var format: MediaFormat? = null
