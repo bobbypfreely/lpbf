@@ -44,8 +44,8 @@ object AudioDecoder {
 				break
 			}
 		}
-		require(trackIndex >= 0 && format != null) { "No audio track found in $filePath" }
-		extractor.selectTrack(trackIndex)
+		require(trackIndex >= 0 && format != null) { "No audio track found" }
+
 
 		val mime = format.getString(MediaFormat.KEY_MIME)!!
 		val codec = MediaCodec.createDecoderByType(mime)
