@@ -66,30 +66,45 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	}
 
 	// ---- PadInputListener: identical whether fired by MIDI hardware or the virtual grid ----
+	// Both methods are wrapped in try/catch as a safety net -- nothing in this path should
+	// ever be able to crash the whole app; worst case it logs and the tap is a no-op.
 
 	override fun onPadDown(x: Int, y: Int) {
-		val session = _markingSession.value ?: return
-		if (session.isSpliced) return
-		val button = ButtonRef(chain = 0, x = x, y = y)
-		_selectedButton.value = button
-		playbackController?.playFrom(session.lastMarkMs())
-		_isPlaying.value = true
+		try {
+			val session = _markingSession.value ?: return
+			if (session.isSpliced) return
+			val button = ButtonRef(chain = 0, x = x, y = y)
+			_selectedButton.value = button
+			playbackController?.playFrom(session.lastMarkMs())
+			_isPlaying.value = true
+		} catch (e: Exception) {
+			android.util.Log.e("ProjectViewModel", "onPadDown error", e)
+		}
 	}
 
 	override fun onPadUp(x: Int, y: Int) {
-		val session = _markingSession.value ?: return
-		if (session.isSpliced) return
-		val stopMs = playbackController?.stop() ?: return
-		_isPlaying.value = false
-		val button = ButtonRef(chain = 0, x = x, y = y)
-		if (stopMs <= session.lastMarkMs()) {
-    return
-}
-		when (val result = session.recordMark(stopMs, button)) {
-			is MarkingSession.RecordResult.Committed -> notifySegmentsChanged()
-			is MarkingSession.RecordResult.ExceedsCap -> {
-				_capPrompt.value = CapPromptState(result.gapMs, result.maxMs, button, stopMs)
+		try {
+			val session = _markingSession.value ?: return
+			if (session.isSpliced) return
+			val stopMs = playbackController?.stop() ?: return
+			_isPlaying.value = false
+			val button = ButtonRef(chain = 0, x = x, y = y)
+
+			// A very quick tap can report a stop position at or before the previous mark
+			// (playback barely started before release) -- ignore rather than crash on
+			// MarkingSession's "must be after the previous mark" precondition.
+			if (stopMs <= session.lastMarkMs()) {
+				return
 			}
+
+			when (val result = session.recordMark(stopMs, button)) {
+				is MarkingSession.RecordResult.Committed -> notifySegmentsChanged()
+				is MarkingSession.RecordResult.ExceedsCap -> {
+					_capPrompt.value = CapPromptState(result.gapMs, result.maxMs, button, stopMs)
+				}
+			}
+		} catch (e: Exception) {
+			android.util.Log.e("ProjectViewModel", "onPadUp error", e)
 		}
 	}
 
