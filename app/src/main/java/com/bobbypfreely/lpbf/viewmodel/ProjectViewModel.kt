@@ -82,7 +82,9 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		val stopMs = playbackController?.stop() ?: return
 		_isPlaying.value = false
 		val button = ButtonRef(chain = 0, x = x, y = y)
-
+		if (stopMs <= session.lastMarkMs()) {
+    return
+}
 		when (val result = session.recordMark(stopMs, button)) {
 			is MarkingSession.RecordResult.Committed -> notifySegmentsChanged()
 			is MarkingSession.RecordResult.ExceedsCap -> {
