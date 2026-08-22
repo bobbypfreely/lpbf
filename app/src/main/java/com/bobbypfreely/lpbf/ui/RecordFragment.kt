@@ -101,19 +101,35 @@ class RecordFragment : Fragment(R.layout.fragment_record) {
 	private fun decodeAndLoad(uri: Uri) {
 		val context = requireContext().applicationContext
 		val statusText = view?.findViewById<TextView>(R.id.statusText)
-		activity?.runOnUiThread { statusText?.text = "Decoding\u2026" }
+		activity?.runOnUiThread { statusText?.text = "Copying file\u2026" }
 		thread(name = "lpbf-decode") {
 			try {
-				val audio = AudioDecoder.decode(context, uri)
+				val tempFile = copyUriToCacheFile(context, uri)
+				activity?.runOnUiThread {
+					statusText?.text = "Copied ${tempFile.length()} bytes, decoding\u2026"
+				}
+				val audio = AudioDecoder.decode(tempFile.absolutePath)
 				activity?.runOnUiThread {
 					viewModel.setDecodedAudio(audio)
 				}
 			} catch (e: Exception) {
 				android.util.Log.e("RecordFragment", "Decode failed", e)
 				activity?.runOnUiThread {
-					statusText?.text = "Decode FAILED: ${e.message}"
+					statusText?.text = "Decode FAILED: ${e.javaClass.simpleName}: ${e.message}"
 				}
 			}
 		}
+	}
+
+	private fun copyUriToCacheFile(context: android.content.Context, uri: Uri): java.io.File {
+		val tempFile = java.io.File(context.cacheDir, "lpbf_import_temp.audio")
+		val input = context.contentResolver.openInputStream(uri)
+			?: error("Could not open input stream for $uri")
+		input.use { inStream ->
+			tempFile.outputStream().use { outStream ->
+				inStream.copyTo(outStream)
+			}
+		}
+		return tempFile
 	}
 }
