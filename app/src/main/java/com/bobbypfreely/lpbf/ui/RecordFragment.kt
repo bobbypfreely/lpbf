@@ -3,11 +3,10 @@ package com.bobbypfreely.lpbf.ui
 import android.app.AlertDialog
 import android.net.Uri
 import android.os.Bundle
-import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,24 +47,31 @@ class RecordFragment : Fragment(R.layout.fragment_record) {
 
 		viewModel.decodedAudio.observe(viewLifecycleOwner) { audio ->
 			if (audio != null) {
-				statusText.text = "Track loaded (${audio.totalDurationMs}ms). Tap a pad to start marking."
+				statusText.text = "Decoded: ${audio.totalDurationMs}ms, ${audio.pcm.size} bytes PCM, " +
+					"${audio.sampleRate}Hz, ${audio.channels}ch. Tap a pad to start."
 			}
 		}
 
 		viewModel.segmentVersion.observe(viewLifecycleOwner) {
 			val session = viewModel.markingSession.value
 			val count = session?.segmentCount ?: 0
-			if (viewModel.decodedAudio.value != null) {
+			if (viewModel.decodedAudio.value != null && count > 0) {
 				statusText.text = "$count segment(s) marked so far."
 			}
 		}
 
 		viewModel.isPlaying.observe(viewLifecycleOwner) { playing ->
-			statusText.text = if (playing) "Playing\u2026 press the pad again to mark the cut" else statusText.text
+			if (playing) statusText.text = "Playing\u2026 press the pad again to mark the cut"
 		}
 
 		viewModel.capPrompt.observe(viewLifecycleOwner) { prompt ->
 			if (prompt != null) showCapDialog(prompt.gapMs, prompt.maxMs)
+		}
+
+		// DIAGNOSTIC: shows every pad-down/up event as a Toast, including the exact
+		// stopMs vs lastMark comparison, so we can see input + timing without logcat.
+		viewModel.debugEvent.observe(viewLifecycleOwner) { msg ->
+			Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
 		}
 	}
 
@@ -82,10 +88,19 @@ class RecordFragment : Fragment(R.layout.fragment_record) {
 
 	private fun decodeAndLoad(uri: Uri) {
 		val context = requireContext().applicationContext
+		val statusText = view?.findViewById<TextView>(R.id.statusText)
+		activity?.runOnUiThread { statusText?.text = "Decoding\u2026" }
 		thread(name = "lpbf-decode") {
-			val audio = AudioDecoder.decode(context, uri)
-			activity?.runOnUiThread {
-				viewModel.setDecodedAudio(audio)
+			try {
+				val audio = AudioDecoder.decode(context, uri)
+				activity?.runOnUiThread {
+					viewModel.setDecodedAudio(audio)
+				}
+			} catch (e: Exception) {
+				android.util.Log.e("RecordFragment", "Decode failed", e)
+				activity?.runOnUiThread {
+					statusText?.text = "Decode FAILED: ${e.message}"
+				}
 			}
 		}
 	}

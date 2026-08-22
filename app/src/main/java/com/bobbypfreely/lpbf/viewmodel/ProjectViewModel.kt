@@ -47,6 +47,12 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	private val _segmentVersion = MutableLiveData(0)
 	val segmentVersion: LiveData<Int> = _segmentVersion
 
+	/** DIAGNOSTIC: fires unconditionally the instant a pad event is received, before
+	 * any other logic runs -- lets us confirm whether input is even reaching here at all,
+	 * independent of whether playback/marking afterward works. Remove once things are stable. */
+	private val _debugEvent = MutableLiveData<String>()
+	val debugEvent: LiveData<String> = _debugEvent
+
 	var playbackController: AudioPlaybackController? = null
 		private set
 
@@ -66,12 +72,14 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	}
 
 	// ---- PadInputListener: identical whether fired by MIDI hardware or the virtual grid ----
-	// Both methods are wrapped in try/catch as a safety net -- nothing in this path should
-	// ever be able to crash the whole app; worst case it logs and the tap is a no-op.
 
 	override fun onPadDown(x: Int, y: Int) {
+		_debugEvent.postValue("DOWN pad ($x,$y)")
 		try {
-			val session = _markingSession.value ?: return
+			val session = _markingSession.value ?: run {
+				_debugEvent.postValue("DOWN ($x,$y) but no MarkingSession -- import a track first")
+				return
+			}
 			if (session.isSpliced) return
 			val button = ButtonRef(chain = 0, x = x, y = y)
 			_selectedButton.value = button
@@ -79,21 +87,22 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 			_isPlaying.value = true
 		} catch (e: Exception) {
 			android.util.Log.e("ProjectViewModel", "onPadDown error", e)
+			_debugEvent.postValue("onPadDown ERROR: ${e.message}")
 		}
 	}
 
 	override fun onPadUp(x: Int, y: Int) {
+		_debugEvent.postValue("UP pad ($x,$y)")
 		try {
 			val session = _markingSession.value ?: return
 			if (session.isSpliced) return
 			val stopMs = playbackController?.stop() ?: return
 			_isPlaying.value = false
 			val button = ButtonRef(chain = 0, x = x, y = y)
+			_debugEvent.postValue("UP ($x,$y) at stopMs=$stopMs, lastMark=${session.lastMarkMs()}")
 
-			// A very quick tap can report a stop position at or before the previous mark
-			// (playback barely started before release) -- ignore rather than crash on
-			// MarkingSession's "must be after the previous mark" precondition.
 			if (stopMs <= session.lastMarkMs()) {
+				_debugEvent.postValue("Ignored: stopMs=$stopMs <= lastMark=${session.lastMarkMs()} (press too short / no playback progress)")
 				return
 			}
 
@@ -105,6 +114,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 			}
 		} catch (e: Exception) {
 			android.util.Log.e("ProjectViewModel", "onPadUp error", e)
+			_debugEvent.postValue("onPadUp ERROR: ${e.message}")
 		}
 	}
 
