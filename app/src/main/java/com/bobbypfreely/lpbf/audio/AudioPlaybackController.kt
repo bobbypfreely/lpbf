@@ -14,11 +14,16 @@ import kotlin.concurrent.thread
  * Lifecycle ownership is deliberate: the playback thread ALONE creates, writes to,
  * stops, and releases the AudioTrack, start to finish (in a try/finally so it happens
  * whether the loop exits naturally or via stopRequested). stop() on the calling thread
- * only flips a flag and joins -- it never touches the AudioTrack directly. That avoids
- * a release() on one thread racing a write()/stop() on the other, which is what was
- * crashing the app on pad release.
+ * only flips a flag and joins -- it never touches the AudioTrack directly.
+ *
+ * [onDebug] is an optional hook surfacing internal state (buffer size, errors, exit
+ * reason) to the UI without needing logcat -- temporary scaffolding while chasing the
+ * "playback never advances" bug.
  */
-class AudioPlaybackController(private val audio: DecodedAudio) {
+class AudioPlaybackController(
+	private val audio: DecodedAudio,
+	private val onDebug: ((String) -> Unit)? = null,
+) {
 
 	private var playThread: Thread? = null
 
@@ -32,6 +37,7 @@ class AudioPlaybackController(private val audio: DecodedAudio) {
 		if (isPlaying) return
 		stopRequested = false
 		currentFrame = audio.msToFrame(fromMs).coerceIn(0, audio.totalFrames)
+		onDebug?.invoke("playFrom($fromMs) startFrame=$currentFrame totalFrames=${audio.totalFrames}")
 
 		playThread = thread(name = "lpbf-playback") {
 			var track: AudioTrack? = null
@@ -44,7 +50,9 @@ class AudioPlaybackController(private val audio: DecodedAudio) {
 				val minBufferSize = AudioTrack.getMinBufferSize(
 					audio.sampleRate, channelConfig, AudioFormat.ENCODING_PCM_16BIT
 				)
+				onDebug?.invoke("minBufferSize=$minBufferSize sampleRate=${audio.sampleRate} channels=${audio.channels}")
 				if (minBufferSize <= 0) {
+					onDebug?.invoke("ABORT: invalid minBufferSize=$minBufferSize")
 					Log.e("AudioPlaybackController", "Invalid minBufferSize=$minBufferSize, aborting playback")
 					return@thread
 				}
@@ -67,23 +75,31 @@ class AudioPlaybackController(private val audio: DecodedAudio) {
 					.setTransferMode(AudioTrack.MODE_STREAM)
 					.build()
 
+				onDebug?.invoke("AudioTrack built OK, state=${track.state}, calling play()")
 				track.play()
+				onDebug?.invoke("play() called, playState=${track.playState}")
 
 				val bytesPerFrame = audio.channels * 2
-				// Smaller chunks = more frequent stopRequested checks = snappier, safer stop().
 				val chunkFrames = 1024
 				var frame = currentFrame
+				var chunksWritten = 0
 				while (!stopRequested && frame < audio.totalFrames) {
 					val framesToWrite = minOf(chunkFrames, audio.totalFrames - frame)
 					val byteOffset = frame * bytesPerFrame
 					val byteLength = framesToWrite * bytesPerFrame
-					track.write(audio.pcm, byteOffset, byteLength)
+					val written = track.write(audio.pcm, byteOffset, byteLength)
+					if (written < 0) {
+						onDebug?.invoke("track.write() returned error code $written")
+						break
+					}
 					frame += framesToWrite
 					currentFrame = frame
+					chunksWritten++
 				}
+				onDebug?.invoke("loop exited: stopRequested=$stopRequested frame=$frame chunksWritten=$chunksWritten")
 			} catch (e: Exception) {
-				// Never let a playback error crash the app -- log it and stop cleanly.
 				Log.e("AudioPlaybackController", "Playback error", e)
+				onDebug?.invoke("EXCEPTION: ${e.javaClass.simpleName}: ${e.message}")
 			} finally {
 				try {
 					track?.stop()

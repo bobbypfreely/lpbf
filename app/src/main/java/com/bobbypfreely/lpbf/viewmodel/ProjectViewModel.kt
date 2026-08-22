@@ -58,7 +58,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 
 	fun setDecodedAudio(audio: DecodedAudio) {
 		_decodedAudio.value = audio
-		playbackController = AudioPlaybackController(audio)
+		playbackController = AudioPlaybackController(audio) { msg -> _debugEvent.postValue(msg) }
 		_markingSession.value = MarkingSession(audio.totalDurationMs)
 		notifySegmentsChanged()
 	}

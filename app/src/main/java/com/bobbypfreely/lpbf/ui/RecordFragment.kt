@@ -5,8 +5,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
+import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,6 +18,7 @@ import kotlin.concurrent.thread
 class RecordFragment : Fragment(R.layout.fragment_record) {
 
 	private val viewModel: ProjectViewModel by activityViewModels()
+	private val logLines = StringBuilder()
 
 	private val pickAudio = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
 		if (uri != null) decodeAndLoad(uri)
@@ -30,11 +31,19 @@ class RecordFragment : Fragment(R.layout.fragment_record) {
 		val statusText = view.findViewById<TextView>(R.id.statusText)
 		val connectionText = view.findViewById<TextView>(R.id.connectionText)
 		val grid = view.findViewById<VirtualLaunchpadGridView>(R.id.padGrid)
+		val debugLog = view.findViewById<TextView>(R.id.debugLog)
+		val debugScroll = view.findViewById<ScrollView>(R.id.debugScroll)
+		val clearLogButton = view.findViewById<Button>(R.id.clearLogButton)
 
 		grid.listener = viewModel
 
 		importButton.setOnClickListener {
 			pickAudio.launch(arrayOf("audio/*"))
+		}
+
+		clearLogButton.setOnClickListener {
+			logLines.clear()
+			debugLog.text = ""
 		}
 
 		viewModel.connectedDeviceName.observe(viewLifecycleOwner) { name ->
@@ -68,10 +77,13 @@ class RecordFragment : Fragment(R.layout.fragment_record) {
 			if (prompt != null) showCapDialog(prompt.gapMs, prompt.maxMs)
 		}
 
-		// DIAGNOSTIC: shows every pad-down/up event as a Toast, including the exact
-		// stopMs vs lastMark comparison, so we can see input + timing without logcat.
+		// DIAGNOSTIC: appends every debug message to a persistent, scrollable, on-screen
+		// log instead of a Toast -- lets us capture a full sequence in one screenshot
+		// on devices where logcat is restricted.
 		viewModel.debugEvent.observe(viewLifecycleOwner) { msg ->
-			Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+			logLines.append(msg).append('\n')
+			debugLog.text = logLines.toString()
+			debugScroll.post { debugScroll.fullScroll(View.FOCUS_DOWN) }
 		}
 	}
 
