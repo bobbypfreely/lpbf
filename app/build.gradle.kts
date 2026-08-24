@@ -47,4 +47,9 @@ dependencies {
 
 	// Required by the ported MIDI stack (MidiConnection.kt uses CoroutineScope/channels for USB I/O)
 	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+	// Replaces our hand-rolled MediaCodec/AudioTrack playback code with Google's
+	// battle-tested media pipeline, for the Mark and Cut screen's play/pause/seek.
+	implementation("androidx.media3:media3-exoplayer:1.4.1")
+	implementation("androidx.media3:media3-common:1.4.1")
 }

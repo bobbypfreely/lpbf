@@ -1,0 +1,64 @@
+package com.bobbypfreely.lpbf.waveform
+
+import android.content.Context
+import android.net.Uri
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+
+/**
+ * Wraps ExoPlayer for the Mark and Cut screen's play/pause/seek needs, replacing the
+ * hand-rolled MediaCodec/AudioTrack code that was crashing on real hardware (the
+ * "Cannot create AudioTrack" issue). ExoPlayer handles device/OEM quirks we were
+ * hitting ourselves, and plays directly from the local cached file path.
+ *
+ * Must be created and used on the main thread (ExoPlayer requirement).
+ */
+class ExoPlaybackController(context: Context) {
+
+	private val player = ExoPlayer.Builder(context).build()
+
+	var onPositionUpdate: ((Int) -> Unit)? = null
+	var onPlaybackStateChanged: ((Boolean) -> Unit)? = null
+
+	init {
+		player.addListener(object : Player.Listener {
+			override fun onIsPlayingChanged(isPlaying: Boolean) {
+				onPlaybackStateChanged?.invoke(isPlaying)
+			}
+		})
+	}
+
+	fun load(filePath: String) {
+		player.setMediaItem(MediaItem.fromUri(Uri.fromFile(java.io.File(filePath))))
+		player.prepare()
+	}
+
+	fun playFrom(ms: Int) {
+		player.seekTo(ms.toLong())
+		player.play()
+	}
+
+	fun pause() {
+		player.pause()
+	}
+
+	/** Stops playback and returns the exact position (ms) it stopped at. */
+	fun stop(): Int {
+		val pos = currentPositionMs()
+		player.pause()
+		return pos
+	}
+
+	fun seekTo(ms: Int) {
+		player.seekTo(ms.toLong())
+	}
+
+	fun currentPositionMs(): Int = player.currentPosition.toInt()
+
+	val isPlaying: Boolean get() = player.isPlaying
+
+	fun release() {
+		player.release()
+	}
+}

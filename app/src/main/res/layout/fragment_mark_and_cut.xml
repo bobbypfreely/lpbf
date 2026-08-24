@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+	android:layout_width="match_parent"
+	android:layout_height="match_parent"
+	android:orientation="vertical"
+	android:padding="16dp">
+
+	<Button
+		android:id="@+id/importButton"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:text="Import Track" />
+
+	<TextView
+		android:id="@+id/connectionText"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="8dp"
+		android:text="No Launchpad connected"
+		android:textSize="13sp" />
+
+	<TextView
+		android:id="@+id/statusText"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="4dp"
+		android:text="Import a track to begin."
+		android:textSize="15sp" />
+
+	<FrameLayout
+		android:id="@+id/waveformContainer"
+		android:layout_width="match_parent"
+		android:layout_height="0dp"
+		android:layout_marginTop="12dp"
+		android:layout_weight="2"
+		android:background="#0F0F1A">
+
+		<com.bobbypfreely.lpbf.waveform.WaveformView
+			android:id="@+id/waveformView"
+			android:layout_width="match_parent"
+			android:layout_height="match_parent" />
+
+		<com.bobbypfreely.lpbf.waveform.MarkOverlayView
+			android:id="@+id/markOverlay"
+			android:layout_width="match_parent"
+			android:layout_height="match_parent" />
+
+		<!-- Draggable MarkerView handles are added here dynamically, one per mark -->
+
+	</FrameLayout>
+
+	<LinearLayout
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="8dp"
+		android:orientation="horizontal">
+
+		<Button
+			android:id="@+id/zoomOutButton"
+			android:layout_width="0dp"
+			android:layout_height="wrap_content"
+			android:layout_weight="1"
+			android:text="\u2212 Zoom" />
+
+		<Button
+			android:id="@+id/playPauseButton"
+			android:layout_width="0dp"
+			android:layout_height="wrap_content"
+			android:layout_weight="2"
+			android:layout_marginStart="4dp"
+			android:layout_marginEnd="4dp"
+			android:text="Play" />
+
+		<Button
+			android:id="@+id/zoomInButton"
+			android:layout_width="0dp"
+			android:layout_height="wrap_content"
+			android:layout_weight="1"
+			android:text="+ Zoom" />
+
+	</LinearLayout>
+
+	<Button
+		android:id="@+id/dropMarkButton"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="8dp"
+		android:text="Mark Cut Here" />
+
+	<TextView
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="12dp"
+		android:text="Debug log:"
+		android:textSize="12sp"
+		android:textStyle="bold" />
+
+	<ScrollView
+		android:id="@+id/debugScroll"
+		android:layout_width="match_parent"
+		android:layout_height="0dp"
+		android:layout_weight="1"
+		android:background="#1A1A2E"
+		android:layout_marginTop="4dp">
+
+		<TextView
+			android:id="@+id/debugLog"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:padding="8dp"
+			android:fontFamily="monospace"
+			android:textColor="#00ADB5"
+			android:textIsSelectable="true"
+			android:textSize="11sp" />
+
+	</ScrollView>
+
+</LinearLayout>
