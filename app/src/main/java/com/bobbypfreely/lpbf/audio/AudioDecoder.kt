@@ -109,6 +109,12 @@ object AudioDecoder {
 		codec.release()
 		extractor.release()
 
-		return DecodedAudio(pcmOut.toByteArray(), outputSampleRate, outputChannels)
+		val decoded = DecodedAudio(pcmOut.toByteArray(), outputSampleRate, outputChannels)
+		check(decoded.totalDurationMs > 0) {
+			"Decoded 0ms of audio (mime=$mime, sampleRate=$outputSampleRate, " +
+				"channels=$outputChannels, pcmBytes=${decoded.pcm.size}) -- " +
+				"MediaCodec produced no output for this file"
+		}
+		return decoded
 	}
 }
