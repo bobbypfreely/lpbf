@@ -16,6 +16,8 @@
 
 package com.bobbypfreely.lpbf.waveform;
 
+import com.bobbypfreely.lpbf.R;
+
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Canvas;
