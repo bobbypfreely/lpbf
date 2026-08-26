@@ -17,7 +17,21 @@ class MainActivity : AppCompatActivity() {
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
+		CrashLogger.install(applicationContext)
 		setContentView(R.layout.activity_main)
+
+		CrashLogger.getLastCrash(this)?.let { trace ->
+			android.app.AlertDialog.Builder(this)
+				.setTitle("Last crash")
+				.setMessage(trace)
+				.setPositiveButton("Copy") { _, _ ->
+					val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+					cm.setPrimaryClip(android.content.ClipData.newPlainText("crash", trace))
+					CrashLogger.clear(this)
+				}
+				.setNegativeButton("Dismiss") { _, _ -> CrashLogger.clear(this) }
+				.show()
+		}
 
 		viewModel = ViewModelProvider(this)[ProjectViewModel::class.java]
 
