@@ -168,6 +168,12 @@ public class WaveformView extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        // No audio loaded yet (or a failed decode) -- mLenByZoomLevel and friends
+        // aren't allocated until setAudioData() runs, so bail out before dispatching
+        // to the listener to avoid an NPE in maxPos()/millisecsToPixels() etc.
+        if (!mHasData) {
+            return true;
+        }
         mScaleGestureDetector.onTouchEvent(event);
         if (mGestureDetector.onTouchEvent(event)) {
             return true;

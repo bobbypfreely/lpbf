@@ -46,6 +46,10 @@ object AudioDecoder {
 		}
 		require(trackIndex >= 0 && format != null) { "No audio track found" }
 
+		// MediaExtractor won't deliver any samples until the track is selected --
+		// without this, readSampleData() returns -1 immediately and the decoder
+		// drains with zero output regardless of file format.
+		extractor.selectTrack(trackIndex)
 
 		val mime = format.getString(MediaFormat.KEY_MIME)!!
 		val codec = MediaCodec.createDecoderByType(mime)
