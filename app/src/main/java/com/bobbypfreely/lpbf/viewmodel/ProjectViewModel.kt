@@ -104,14 +104,40 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		}
 	}
 
-	// ---- PadInputListener: retired for marking, will be repurposed for Place (pad -> assign next cut) ----
+	// ---- Place: pad press assigns the next unassigned cut, in order. Tapping a pad
+	// that's already assigned stacks another cut onto it (multi-trigger cycling) --
+	// MarkingSession has no unique-button constraint, so this needs no extra state. ----
+
+	/** True only while the Place fragment is the visible tab (set from its onResume/onPause),
+	 * so a physical Launchpad press on another tab can't silently reassign a cut. */
+	var isPlaceTabActive: Boolean = false
 
 	override fun onPadDown(x: Int, y: Int) {
-		logDebug("Pad DOWN ($x,$y) -- mapping happens on Place tab (not built yet)")
+		if (!isPlaceTabActive) {
+			logDebug("Pad DOWN ($x,$y) ignored -- not on Place tab")
+			return
+		}
+		assignNextSegment(x, y)
 	}
 
-	override fun onPadUp(x: Int, y: Int) {
-		logDebug("Pad UP ($x,$y) -- mapping happens on Place tab (not built yet)")
+	override fun onPadUp(x: Int, y: Int) {}
+
+	/** Assigns [x],[y] (chain 0 -- dual-Launchpad chain selection not yet wired into
+	 * PadInputListener) to the first segment with no button, or stacks onto an existing
+	 * assignment if every segment already has one. */
+	fun assignNextSegment(x: Int, y: Int) {
+		val session = _markingSession.value ?: return
+		if (session.isSpliced) return
+
+		val nextIndex = (0 until session.segmentCount).firstOrNull { session.segment(it).button == null }
+		if (nextIndex == null) {
+			logDebug("Pad ($x,$y): all cuts already assigned -- nothing left to auto-advance to")
+			return
+		}
+
+		session.reassignButton(nextIndex, ButtonRef(chain = 0, x = x, y = y))
+		logDebug("Assigned cut ${nextIndex + 1} -> pad ($x,$y)")
+		notifySegmentsChanged()
 	}
 
 	// ---- Cap prompt resolution, called from the dialog the UI shows ----
