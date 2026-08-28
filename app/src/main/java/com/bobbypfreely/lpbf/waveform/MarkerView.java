@@ -70,6 +70,11 @@ public class MarkerView extends ImageView {
         switch(event.getAction()) {
         case MotionEvent.ACTION_DOWN:
             requestFocus();
+            // Stop the parent ViewPager2 from stealing this as a tab swipe while
+            // the user is actually dragging the marker handle.
+            if (getParent() != null) {
+                getParent().requestDisallowInterceptTouchEvent(true);
+            }
             // We use raw x because this window itself is going to
             // move, which will screw up the "local" coordinates
             mListener.markerTouchStart(this, event.getRawX());
@@ -80,7 +85,13 @@ public class MarkerView extends ImageView {
             mListener.markerTouchMove(this, event.getRawX());
             break;
         case MotionEvent.ACTION_UP:
-            mListener.markerTouchEnd(this);
+        case MotionEvent.ACTION_CANCEL:
+            if (getParent() != null) {
+                getParent().requestDisallowInterceptTouchEvent(false);
+            }
+            if (event.getAction() == MotionEvent.ACTION_UP) {
+                mListener.markerTouchEnd(this);
+            }
             break;
         }
         return true;

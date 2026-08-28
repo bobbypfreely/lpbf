@@ -28,6 +28,8 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 	private lateinit var statusText: TextView
 	private lateinit var connectionText: TextView
 	private lateinit var playPauseButton: Button
+	private lateinit var restartButton: Button
+	private lateinit var playbackSeekBar: android.widget.SeekBar
 	private lateinit var debugLog: TextView
 	private lateinit var debugScroll: ScrollView
 
@@ -43,6 +45,18 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		private var highlightedMarkMs: Int? = null
 		private val highlightClearHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
+	private var isUserSeeking = false
+	private val positionPollHandler = android.os.Handler(android.os.Looper.getMainLooper())
+	private val positionPollTick = object : Runnable {
+		override fun run() {
+			val controller = exoController
+			if (controller != null && !isUserSeeking) {
+				playbackSeekBar.progress = controller.currentPositionMs()
+			}
+			positionPollHandler.postDelayed(this, 200L)
+		}
+	}
+
 	private val pickAudio = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
 		if (uri != null) decodeAndLoad(uri)
 	}
@@ -56,6 +70,8 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		statusText = view.findViewById(R.id.statusText)
 		connectionText = view.findViewById(R.id.connectionText)
 		playPauseButton = view.findViewById(R.id.playPauseButton)
+		restartButton = view.findViewById(R.id.restartButton)
+		playbackSeekBar = view.findViewById(R.id.playbackSeekBar)
 		debugLog = view.findViewById(R.id.debugLog)
 		debugScroll = view.findViewById(R.id.debugScroll)
 
@@ -72,6 +88,17 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			waveformView.zoomOut(); waveformView.invalidate(); refreshMarkers()
 		}
 		playPauseButton.setOnClickListener { togglePlayPause() }
+		restartButton.setOnClickListener { exoController?.playFrom(0) }
+		playbackSeekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+			override fun onProgressChanged(seekBar: android.widget.SeekBar, progress: Int, fromUser: Boolean) {}
+			override fun onStartTrackingTouch(seekBar: android.widget.SeekBar) {
+				isUserSeeking = true
+			}
+			override fun onStopTrackingTouch(seekBar: android.widget.SeekBar) {
+				isUserSeeking = false
+				exoController?.seekTo(seekBar.progress)
+			}
+		})
 		view.findViewById<Button>(R.id.dropMarkButton).setOnClickListener { dropMark() }
 
 		viewModel.connectedDeviceName.observe(viewLifecycleOwner) { name ->
@@ -85,6 +112,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 					gainData.numFrames, gainData.frameGains, gainData.sampleRate, gainData.samplesPerFrame
 				)
 				statusText.text = "Decoded: ${audio.totalDurationMs}ms. Play, then tap 'Mark Cut Here' to cut."
+				playbackSeekBar.max = audio.totalDurationMs
 				setupPlayer()
 				waveformView.post { refreshMarkers() }
 			}
@@ -124,7 +152,15 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		val controller = ExoPlaybackController(requireContext())
 		controller.load(path)
 		controller.onPlaybackStateChanged = { playing ->
-			activity?.runOnUiThread { playPauseButton.text = if (playing) "Pause" else "Play" }
+			activity?.runOnUiThread {
+				playPauseButton.text = if (playing) "Pause" else "Play"
+				if (playing) {
+					positionPollHandler.removeCallbacks(positionPollTick)
+					positionPollHandler.post(positionPollTick)
+				} else {
+					positionPollHandler.removeCallbacks(positionPollTick)
+				}
+			}
 		}
 		exoController = controller
 	}
@@ -142,7 +178,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 	private fun dropMark() {
 		val controller = exoController ?: return
 		val posMs = controller.currentPositionMs()
-		controller.pause()
 		viewModel.dropMark(posMs)
 	}
 
@@ -328,6 +363,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		exoController?.release()
 		exoController = null
 		highlightClearHandler.removeCallbacksAndMessages(null)
+		positionPollHandler.removeCallbacksAndMessages(null)
 		super.onDestroyView()
 	}
 }

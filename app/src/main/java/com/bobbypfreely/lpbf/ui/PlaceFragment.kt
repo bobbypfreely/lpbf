@@ -73,10 +73,6 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 			refresh()
 		}
 
-		viewModel.decodedAudio.observe(viewLifecycleOwner) { audio ->
-			if (audio != null) setupPreviewPlayer()
-		}
-
 		viewModel.previewRequest.observe(viewLifecycleOwner) { request ->
 			if (request != null) {
 				playPreview(request.startMs, request.endMs)
@@ -97,27 +93,35 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 		super.onPause()
 		viewModel.isPlaceTabActive = false
 		previewStopHandler.removeCallbacksAndMessages(null)
-		previewController?.pause()
+		previewController?.release()
+		previewController = null
 	}
 
 	// ---- Preview playback (Play mode) ----
-
-	private fun setupPreviewPlayer() {
-		val path = viewModel.cachedFilePath ?: return
-		previewController?.release()
-		previewController = ExoPlaybackController(requireContext()).apply { load(path) }
-	}
+	//
+	// A fresh ExoPlaybackController is created per preview and fully released (not just
+	// paused) as soon as it's done, or the moment this tab loses focus. Previously this
+	// held one long-lived instance, which could stay alive at the same time as Mark &
+	// Cut's own player and fight it for audio focus, breaking playback elsewhere in the
+	// app. Only ever one of these exists at a time now.
 
 	private fun playPreview(startMs: Int, endMs: Int) {
-		val controller = previewController ?: run {
-			setupPreviewPlayer()
-			previewController
-		} ?: return
+		val path = viewModel.cachedFilePath ?: return
 
 		previewStopHandler.removeCallbacksAndMessages(null)
+		previewController?.release()
+
+		val controller = ExoPlaybackController(requireContext())
+		controller.load(path)
+		previewController = controller
 		controller.playFrom(startMs)
+
 		val durationMs = (endMs - startMs).coerceAtLeast(0).toLong()
-		previewStopHandler.postDelayed({ controller.pause() }, durationMs)
+		previewStopHandler.postDelayed({
+			controller.pause()
+			controller.release()
+			if (previewController === controller) previewController = null
+		}, durationMs)
 	}
 
 	// ---- Segment list + grid rendering ----
