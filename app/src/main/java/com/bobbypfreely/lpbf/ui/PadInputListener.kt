@@ -9,4 +9,9 @@ package com.bobbypfreely.lpbf.ui
 interface PadInputListener {
 	fun onPadDown(x: Int, y: Int)
 	fun onPadUp(x: Int, y: Int)
+
+	/** Physical Launchpads have 8 side buttons (0-7) that page between 8 separate
+	 * 64-pad grids ("chains"). Default no-op since the virtual on-screen grid has no
+	 * hardware chain buttons of its own -- only MidiControllerBridge fires this. */
+	fun onChainTouch(c: Int, upDown: Boolean) {}
 }

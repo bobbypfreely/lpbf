@@ -16,17 +16,22 @@ import com.bobbypfreely.lpbf.waveform.ExoPlaybackController
 
 /**
  * Place: assigns each provisional segment (from Mark and Cut) to a Launchpad button,
- * and lets you preview the mapping before exporting.
+ * on one of 8 chains (a real Launchpad's side buttons page between 8 separate 64-pad
+ * grids), and lets you preview the mapping before exporting.
  *
- * Two modes, toggled by placeModeToggle:
+ * Three modes, cycled by placeModeToggle:
  *  - EDIT (default): tapping a pad assigns the next unassigned cut to it, auto-advancing
  *    down the ordered list. Tapping an already-assigned pad stacks another cut onto it
  *    (multi-trigger cycling) -- MarkingSession has no unique-button constraint.
  *  - PLAY: tapping a pad previews whatever's mapped to it instead of assigning anything.
  *    Repeated presses on a stacked pad cycle through each cut mapped there.
+ *  - HYBRID: like EDIT, but immediately previews the cut you just placed so you hear it
+ *    without a second tap. Falls back to PLAY-style cycling once everything's assigned.
  *
  * Both physical Launchpad presses and on-screen grid taps are routed through the exact
  * same ProjectViewModel.onPadDown/onPadUp so mode logic only has to live in one place.
+ * The chain selector mirrors this: a real Launchpad's physical chain buttons sync here
+ * automatically via ProjectViewModel.onChainTouch, same as the tap buttons below do.
  *
  * Long-pressing a cut in the list jumps back to Mark & Cut with that mark highlighted,
  * for quick fine-adjustment without a dedicated screen.
@@ -37,8 +42,11 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 
 	private lateinit var statusText: TextView
 	private lateinit var modeToggle: Button
+	private lateinit var chainSelectorRow: LinearLayout
 	private lateinit var segmentListContainer: LinearLayout
 	private lateinit var grid: VirtualLaunchpadGridView
+
+	private val chainButtons = mutableListOf<Button>()
 
 	private var previewController: ExoPlaybackController? = null
 	private val previewStopHandler = Handler(Looper.getMainLooper())
@@ -48,22 +56,25 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 
 		statusText = view.findViewById(R.id.placeStatusText)
 		modeToggle = view.findViewById(R.id.placeModeToggle)
+		chainSelectorRow = view.findViewById(R.id.chainSelectorRow)
 		segmentListContainer = view.findViewById(R.id.segmentListContainer)
 		grid = view.findViewById(R.id.placeGrid)
 
+		buildChainSelector()
+
 		// Virtual grid taps go through the exact same code path a physical Launchpad
 		// press does -- PadInputListener doesn't care which one fired it, and neither
-		// does the mode logic that lives in ProjectViewModel.
+		// does the mode/chain logic that lives in ProjectViewModel.
 		grid.listener = object : PadInputListener {
 			override fun onPadDown(x: Int, y: Int) = viewModel.onPadDown(x, y)
 			override fun onPadUp(x: Int, y: Int) = viewModel.onPadUp(x, y)
 		}
 
 		modeToggle.setOnClickListener {
-			val next = if (viewModel.placeMode.value == ProjectViewModel.PlaceMode.EDIT) {
-				ProjectViewModel.PlaceMode.PLAY
-			} else {
-				ProjectViewModel.PlaceMode.EDIT
+			val next = when (viewModel.placeMode.value) {
+				ProjectViewModel.PlaceMode.EDIT -> ProjectViewModel.PlaceMode.PLAY
+				ProjectViewModel.PlaceMode.PLAY -> ProjectViewModel.PlaceMode.HYBRID
+				else -> ProjectViewModel.PlaceMode.EDIT
 			}
 			viewModel.setPlaceMode(next)
 		}
@@ -72,6 +83,8 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 			modeToggle.text = "Mode: ${mode.name.lowercase().replaceFirstChar { it.uppercase() }}"
 			refresh()
 		}
+
+		viewModel.currentChain.observe(viewLifecycleOwner) { refresh() }
 
 		viewModel.previewRequest.observe(viewLifecycleOwner) { request ->
 			if (request != null) {
@@ -97,7 +110,39 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 		previewController = null
 	}
 
-	// ---- Preview playback (Play mode) ----
+	// ---- Chain selector (8 side-button pages, mirrors a real Launchpad) ----
+
+	private fun buildChainSelector() {
+		chainSelectorRow.removeAllViews()
+		chainButtons.clear()
+		for (chain in 0 until 8) {
+			val button = Button(requireContext()).apply {
+				text = (chain + 1).toString()
+				textSize = 12f
+				layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+					marginEnd = if (chain < 7) 4 else 0
+				}
+				setPadding(0, 8, 0, 8)
+				setOnClickListener { viewModel.setCurrentChain(chain) }
+			}
+			chainSelectorRow.addView(button)
+			chainButtons.add(button)
+		}
+	}
+
+	private fun updateChainSelectorHighlight(activeChain: Int) {
+		chainButtons.forEachIndexed { chain, button ->
+			if (chain == activeChain) {
+				button.setBackgroundColor(Color.parseColor("#00ADB5"))
+				button.setTextColor(Color.parseColor("#0F0F1A"))
+			} else {
+				button.setBackgroundColor(Color.parseColor("#1A1A2E"))
+				button.setTextColor(Color.parseColor("#DDDDDD"))
+			}
+		}
+	}
+
+	// ---- Preview playback (Play/Hybrid modes) ----
 	//
 	// A fresh ExoPlaybackController is created per preview and fully released (not just
 	// paused) as soon as it's done, or the moment this tab loses focus. Previously this
@@ -128,6 +173,8 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 
 	private fun refresh() {
 		val session = viewModel.markingSession.value
+		val activeChain = viewModel.currentChain.value ?: 0
+		updateChainSelectorHighlight(activeChain)
 
 		if (session == null || session.segmentCount == 0) {
 			statusText.text = "Import and mark a track first."
@@ -138,12 +185,14 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 
 		val segments = session.segments()
 		val nextIndex = segments.indexOfFirst { it.button == null }
-		val isPlayMode = viewModel.placeMode.value == ProjectViewModel.PlaceMode.PLAY
+		val mode = viewModel.placeMode.value ?: ProjectViewModel.PlaceMode.EDIT
+		val isAssignMode = mode == ProjectViewModel.PlaceMode.EDIT || mode == ProjectViewModel.PlaceMode.HYBRID
 
 		statusText.text = when {
-			isPlayMode -> "Play mode: tap a pad to preview its cut(s)."
-			nextIndex == -1 -> "All ${segments.size} cut(s) assigned. Tap a pad again to stack another cut on it."
-			else -> "Cut ${nextIndex + 1} of ${segments.size} -- tap a pad to assign it."
+			!isAssignMode -> "Chain ${activeChain + 1} -- Play mode: tap a pad to preview its cut(s)."
+			nextIndex == -1 -> "Chain ${activeChain + 1} -- all ${segments.size} cut(s) assigned. Tap a pad again to stack another cut on it."
+			mode == ProjectViewModel.PlaceMode.HYBRID -> "Chain ${activeChain + 1} -- Hybrid: cut ${nextIndex + 1} of ${segments.size}, tap a pad to place and hear it."
+			else -> "Chain ${activeChain + 1} -- cut ${nextIndex + 1} of ${segments.size} -- tap a pad to assign it."
 		}
 
 		segmentListContainer.removeAllViews()
@@ -151,9 +200,14 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 			val row = TextView(requireContext()).apply {
 				textSize = 13f
 				setPadding(8, 8, 8, 8)
-				val label = seg.button?.let { "pad (${it.x}, ${it.y})" } ?: "unassigned"
+				val button = seg.button
+				val label = when {
+					button == null -> "unassigned"
+					button.chain == activeChain -> "pad (${button.x}, ${button.y})"
+					else -> "chain ${button.chain + 1}, pad (${button.x}, ${button.y})"
+				}
 				text = "Cut ${index + 1}  --  ${seg.durationMs}ms  --  $label"
-				if (index == nextIndex && !isPlayMode) {
+				if (index == nextIndex && isAssignMode) {
 					setBackgroundColor(Color.parseColor("#2A2A3E"))
 					setTextColor(Color.parseColor("#00ADB5"))
 				} else {
@@ -167,11 +221,15 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 			segmentListContainer.addView(row)
 		}
 
-		// Light every pad that has at least one segment assigned to it.
+		// Only light pads assigned on the chain currently being viewed -- a real
+		// Launchpad's grid only ever shows the 64 pads of its currently selected chain.
 		grid.clearAllPads()
 		val litColor = Color.parseColor("#00ADB5")
 		segments.forEach { seg ->
-			seg.button?.let { grid.setPadLit(it.x, it.y, litColor) }
+			val button = seg.button
+			if (button != null && button.chain == activeChain) {
+				grid.setPadLit(button.x, button.y, litColor)
+			}
 		}
 	}
 

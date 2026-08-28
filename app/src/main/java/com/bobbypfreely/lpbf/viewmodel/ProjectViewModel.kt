@@ -110,13 +110,24 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	// state. PLAY mode instead previews whatever's mapped to that pad; pressing the same
 	// pad repeatedly cycles through every cut stacked on it. ----
 
-	enum class PlaceMode { EDIT, PLAY }
+	enum class PlaceMode { EDIT, PLAY, HYBRID }
 
 	private val _placeMode = MutableLiveData(PlaceMode.EDIT)
 	val placeMode: LiveData<PlaceMode> = _placeMode
 
 	fun setPlaceMode(mode: PlaceMode) {
 		_placeMode.value = mode
+	}
+
+	/** Which of the Launchpad's 8 side-button "chains" (64-pad pages) Place is currently
+	 * editing/previewing on. Synced automatically from a real device via onChainTouch()
+	 * below when its physical chain buttons are pressed; the on-screen chain selector on
+	 * Place sets it directly for virtual use. */
+	private val _currentChain = MutableLiveData(0)
+	val currentChain: LiveData<Int> = _currentChain
+
+	fun setCurrentChain(chain: Int) {
+		_currentChain.value = chain.coerceIn(0, 7)
 	}
 
 	/** True only while the Place fragment is the visible tab (set from its onResume/onPause),
@@ -142,15 +153,23 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		}
 		when (_placeMode.value) {
 			PlaceMode.PLAY -> previewPad(x, y)
+			PlaceMode.HYBRID -> assignAndPreview(x, y)
 			else -> assignNextSegment(x, y)
 		}
 	}
 
 	override fun onPadUp(x: Int, y: Int) {}
 
-	/** Assigns [x],[y] (chain 0 -- dual-Launchpad chain selection not yet wired into
-	 * PadInputListener) to the first segment with no button, or stacks onto an existing
-	 * assignment if every segment already has one. */
+	/** A real Launchpad's 8 side buttons page between its 8 chains -- keep the app's
+	 * selected chain in sync with whichever one is actually lit on the hardware. */
+	override fun onChainTouch(c: Int, upDown: Boolean) {
+		if (upDown && isPlaceTabActive) {
+			setCurrentChain(c)
+		}
+	}
+
+	/** Assigns [x],[y] on the current chain to the first segment with no button, or stacks
+	 * onto an existing assignment if every segment already has one. */
 	fun assignNextSegment(x: Int, y: Int) {
 		val session = _markingSession.value ?: return
 		if (session.isSpliced) return
@@ -161,17 +180,39 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 			return
 		}
 
-		session.reassignButton(nextIndex, ButtonRef(chain = 0, x = x, y = y))
-		logDebug("Assigned cut ${nextIndex + 1} -> pad ($x,$y)")
+		val chain = _currentChain.value ?: 0
+		session.reassignButton(nextIndex, ButtonRef(chain = chain, x = x, y = y))
+		logDebug("Assigned cut ${nextIndex + 1} -> chain $chain pad ($x,$y)")
 		notifySegmentsChanged()
 	}
 
-	/** Finds every cut mapped to [x],[y] and previews the next one in line, cycling back
-	 * to the first after the last -- this is what makes a stacked (multi-trigger) pad
-	 * play a different cut each press instead of always the same one. */
+	/** Hybrid mode: same auto-advance assignment as Edit, but immediately previews the cut
+	 * that was just placed so you hear what you mapped without a second tap. Once every
+	 * cut is assigned, falls back to plain cycling preview like Play mode. */
+	private fun assignAndPreview(x: Int, y: Int) {
+		val session = _markingSession.value ?: return
+		if (session.isSpliced) return
+
+		val nextIndex = (0 until session.segmentCount).firstOrNull { session.segment(it).button == null }
+		if (nextIndex == null) {
+			previewPad(x, y)
+			return
+		}
+
+		val chain = _currentChain.value ?: 0
+		session.reassignButton(nextIndex, ButtonRef(chain = chain, x = x, y = y))
+		notifySegmentsChanged()
+		val seg = session.segment(nextIndex)
+		logDebug("Assigned + previewing cut ${nextIndex + 1} -> chain $chain pad ($x,$y)")
+		_previewRequest.value = PreviewRequest(seg.startMs, seg.endMs)
+	}
+
+	/** Finds every cut mapped to [x],[y] on the current chain and previews the next one in
+	 * line, cycling back to the first after the last -- this is what makes a stacked
+	 * (multi-trigger) pad play a different cut each press instead of always the same one. */
 	private fun previewPad(x: Int, y: Int) {
 		val session = _markingSession.value ?: return
-		val button = ButtonRef(chain = 0, x = x, y = y)
+		val button = ButtonRef(chain = _currentChain.value ?: 0, x = x, y = y)
 		val matches = session.segments().withIndex().filter { it.value.button == button }
 		if (matches.isEmpty()) {
 			logDebug("Pad ($x,$y): nothing mapped here yet")
