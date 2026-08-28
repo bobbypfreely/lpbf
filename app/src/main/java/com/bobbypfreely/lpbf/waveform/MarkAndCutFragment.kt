@@ -81,6 +81,8 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		view.findViewById<Button>(R.id.importButton).setOnClickListener {
 			pickAudio.launch(arrayOf("audio/*"))
 		}
+		view.findViewById<Button>(R.id.saveProjectButton).setOnClickListener { showSaveProjectDialog() }
+		view.findViewById<Button>(R.id.loadProjectButton).setOnClickListener { showLoadProjectDialog() }
 		view.findViewById<Button>(R.id.zoomInButton).setOnClickListener {
 			waveformView.zoomIn(); waveformView.invalidate(); refreshMarkers()
 		}
@@ -323,6 +325,68 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		waveformView.zoomOut(); waveformView.invalidate(); refreshMarkers()
 	}
 
+	// ---- Project save/resume ----
+
+	private fun showSaveProjectDialog() {
+		if (viewModel.cachedFilePath == null) {
+			statusText.text = "Import a track first -- nothing to save yet."
+			return
+		}
+		val input = android.widget.EditText(requireContext())
+		input.hint = "Project name"
+		AlertDialog.Builder(requireContext())
+			.setTitle("Save Project")
+			.setView(input)
+			.setPositiveButton("Save") { _, _ ->
+				val name = input.text.toString().ifBlank { "Untitled project" }
+				val ok = viewModel.saveCurrentProject(requireContext().applicationContext, name)
+				statusText.text = if (ok) "Saved '$name'." else "Save failed -- nothing to save yet."
+			}
+			.setNegativeButton("Cancel", null)
+			.show()
+	}
+
+	private fun showLoadProjectDialog() {
+		val context = requireContext().applicationContext
+		val projects = viewModel.listSavedProjects(context)
+		if (projects.isEmpty()) {
+			statusText.text = "No saved projects yet."
+			return
+		}
+		val labels = projects.map { it.name }.toTypedArray()
+		AlertDialog.Builder(requireContext())
+			.setTitle("Load Project")
+			.setItems(labels) { _, which ->
+				loadProject(projects[which].id)
+			}
+			.setNegativeButton("Cancel", null)
+			.show()
+	}
+
+	private fun loadProject(id: String) {
+		val context = requireContext().applicationContext
+		statusText.text = "Loading project\u2026"
+		thread(name = "lpbf-load-project") {
+			try {
+				val loaded = viewModel.readProjectForLoad(context, id)
+				if (loaded == null) {
+					activity?.runOnUiThread { statusText.text = "Load FAILED: project data missing or corrupt." }
+					return@thread
+				}
+				val audio = AudioDecoder.decode(loaded.trackFilePath)
+				activity?.runOnUiThread {
+					viewModel.applyLoadedProject(audio, loaded)
+					statusText.text = "Loaded project (${loaded.session.segmentCount} cut(s))."
+				}
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "Load project failed", e)
+				activity?.runOnUiThread {
+					statusText.text = "Load FAILED: ${e.javaClass.simpleName}: ${e.message}"
+				}
+			}
+		}
+	}
+
 	// ---- Import ----
 
 	private fun decodeAndLoad(uri: Uri) {
@@ -357,6 +421,16 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			}
 		}
 		return tempFile
+	}
+
+	override fun onResume() {
+		super.onResume()
+		viewModel.isMarkAndCutTabActive = true
+	}
+
+	override fun onPause() {
+		super.onPause()
+		viewModel.isMarkAndCutTabActive = false
 	}
 
 	override fun onDestroyView() {

@@ -11,6 +11,30 @@
 		android:layout_height="wrap_content"
 		android:text="Import Track" />
 
+	<LinearLayout
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="8dp"
+		android:orientation="horizontal">
+
+		<Button
+			android:id="@+id/saveProjectButton"
+			android:layout_width="0dp"
+			android:layout_height="wrap_content"
+			android:layout_weight="1"
+			android:layout_marginEnd="4dp"
+			android:text="Save Project" />
+
+		<Button
+			android:id="@+id/loadProjectButton"
+			android:layout_width="0dp"
+			android:layout_height="wrap_content"
+			android:layout_weight="1"
+			android:layout_marginStart="4dp"
+			android:text="Load Project" />
+
+	</LinearLayout>
+
 	<TextView
 		android:id="@+id/connectionText"
 		android:layout_width="match_parent"

@@ -16,7 +16,9 @@ class MidiControllerBridge(private val listener: PadInputListener) : MidiControl
 		if (upDown) listener.onPadDown(x, y) else listener.onPadUp(x, y)
 	}
 
-	override fun onFunctionKeyTouch(f: Int, upDown: Boolean) {}
+	override fun onFunctionKeyTouch(f: Int, upDown: Boolean) {
+		listener.onFunctionKeyTouch(f, upDown)
+	}
 	override fun onChainTouch(c: Int, upDown: Boolean) {
 		listener.onChainTouch(c, upDown)
 	}

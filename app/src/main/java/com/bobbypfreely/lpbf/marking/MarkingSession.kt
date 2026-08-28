@@ -19,6 +19,18 @@ class MarkingSession(private val trackDurationMs: Int) {
 
 	companion object {
 		const val MAX_SEGMENT_MS = 8000
+
+		/** Rebuilds a session from previously-saved marks/buttons (project resume).
+		 * Bypasses recordMark()'s live-input validation since this data was already
+		 * valid when it was saved -- restoring it isn't a new user action to check. */
+		fun restore(trackDurationMs: Int, marks: List<Int>, buttons: List<ButtonRef?>): MarkingSession {
+			val session = MarkingSession(trackDurationMs)
+			session.marks.clear()
+			session.marks.addAll(marks)
+			session.segmentButtons.clear()
+			session.segmentButtons.addAll(buttons)
+			return session
+		}
 	}
 
 	sealed class RecordResult {
@@ -47,6 +59,12 @@ class MarkingSession(private val trackDurationMs: Int) {
 	fun segments(): List<Segment> = (0 until segmentCount).map { segment(it) }
 
 	fun lastMarkMs(): Int = marks.last()
+
+	/** Read-only snapshots of internal state, for project save/resume. Paired with
+	 * [restore] below -- together these let a session be fully serialized and
+	 * reconstructed without going through recordMark()'s live-input validation. */
+	fun marksSnapshot(): List<Int> = marks.toList()
+	fun buttonsSnapshot(): List<ButtonRef?> = segmentButtons.toList()
 
 	// ---- Phase 1: live tap-marking ----------------------------------------
 

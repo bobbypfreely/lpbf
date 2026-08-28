@@ -14,4 +14,8 @@ interface PadInputListener {
 	 * 64-pad grids ("chains"). Default no-op since the virtual on-screen grid has no
 	 * hardware chain buttons of its own -- only MidiControllerBridge fires this. */
 	fun onChainTouch(c: Int, upDown: Boolean) {}
+
+	/** Top-row function keys (Unipad calls these Up/Down/Left/Right/Session/User1/
+	 * User2/Mixer, indices 0-7). Default no-op for the same reason as onChainTouch. */
+	fun onFunctionKeyTouch(f: Int, upDown: Boolean) {}
 }

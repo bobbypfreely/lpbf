@@ -7,6 +7,9 @@ import com.bobbypfreely.lpbf.audio.DecodedAudio
 import com.bobbypfreely.lpbf.marking.ButtonRef
 import com.bobbypfreely.lpbf.marking.MarkingSession
 import com.bobbypfreely.lpbf.ui.PadInputListener
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 
 /** Surfaced to the UI when a mark would create a >8s segment -- the user must pick one.
  * button is null for marks made on the Mark and Cut screen (no button chosen yet --
@@ -224,6 +227,155 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		val (segIndex, seg) = matches[cycle]
 		logDebug("Preview pad ($x,$y): cut ${segIndex + 1} (${seg.startMs}-${seg.endMs}ms)")
 		_previewRequest.value = PreviewRequest(seg.startMs, seg.endMs)
+	}
+
+	// ---- Mark & Cut arrow-key navigation: left/right jumps between marks on a
+	// physical Launchpad's top-row function keys. Reuses the same jump/highlight
+	// mechanism Place's long-press already triggers -- this is just another way to
+	// fire the same one-shot event. Up/down (f=0,1) reserved for later. ----
+
+	/** True only while Mark & Cut is the visible tab (set from its onResume/onPause). */
+	var isMarkAndCutTabActive: Boolean = false
+
+	private var arrowNavIndex: Int? = null
+
+	override fun onFunctionKeyTouch(f: Int, upDown: Boolean) {
+		if (!upDown || !isMarkAndCutTabActive) return
+		val session = _markingSession.value ?: return
+		if (session.segmentCount == 0) return
+
+		when (f) {
+			2 -> { // Left: previous mark
+				val cur = arrowNavIndex
+				val next = if (cur == null) session.segmentCount - 1 else (cur - 1 + session.segmentCount) % session.segmentCount
+				arrowNavIndex = next
+				requestJumpToMark(next)
+			}
+			3 -> { // Right: next mark
+				val cur = arrowNavIndex
+				val next = if (cur == null) 0 else (cur + 1) % session.segmentCount
+				arrowNavIndex = next
+				requestJumpToMark(next)
+			}
+			// 0 (Up), 1 (Down): no assigned behavior yet
+		}
+	}
+
+	// ---- Project save/resume: persists the imported track + MarkingSession state to
+	// app-private storage so a project doesn't have to be finished start-to-finish in
+	// one sitting. Track audio is copied (not raw PCM) and re-decoded on load -- decode
+	// is fast now and this keeps saved projects small. ----
+
+	data class ProjectSummary(val id: String, val name: String, val savedAtMs: Long)
+	data class LoadedProjectData(val trackFilePath: String, val trackDurationMs: Int, val session: MarkingSession)
+
+	private var currentProjectId: String? = null
+
+	private fun projectsRoot(context: android.content.Context) = File(context.filesDir, "lpbf_projects")
+
+	/** Copies the current track + serializes the current MarkingSession to disk. Returns
+	 * false if there's nothing to save (no track imported yet). */
+	fun saveCurrentProject(context: android.content.Context, name: String): Boolean {
+		val session = _markingSession.value ?: return false
+		val srcPath = cachedFilePath ?: return false
+		val srcTrack = File(srcPath)
+		if (!srcTrack.exists()) return false
+
+		val id = currentProjectId ?: java.util.UUID.randomUUID().toString().also { currentProjectId = it }
+		val dir = File(projectsRoot(context), id)
+		dir.mkdirs()
+
+		val ext = srcTrack.extension.ifEmpty { "audio" }
+		val trackDest = File(dir, "track.$ext")
+		srcTrack.copyTo(trackDest, overwrite = true)
+
+		val json = JSONObject()
+		json.put("projectName", name)
+		json.put("trackFileName", trackDest.name)
+		json.put("trackDurationMs", _decodedAudio.value?.totalDurationMs ?: 0)
+		json.put("savedAtMs", System.currentTimeMillis())
+		json.put("marks", JSONArray(session.marksSnapshot()))
+
+		val buttonsArray = JSONArray()
+		session.buttonsSnapshot().forEach { b ->
+			if (b == null) {
+				buttonsArray.put(JSONObject.NULL)
+			} else {
+				val bo = JSONObject()
+				bo.put("chain", b.chain)
+				bo.put("x", b.x)
+				bo.put("y", b.y)
+				buttonsArray.put(bo)
+			}
+		}
+		json.put("buttons", buttonsArray)
+
+		File(dir, "session.json").writeText(json.toString())
+		logDebug("Saved project '$name' (id=$id)")
+		return true
+	}
+
+	fun listSavedProjects(context: android.content.Context): List<ProjectSummary> {
+		val root = projectsRoot(context)
+		if (!root.exists()) return emptyList()
+		return root.listFiles { f -> f.isDirectory }?.mapNotNull { dir ->
+			val sessionFile = File(dir, "session.json")
+			if (!sessionFile.exists()) return@mapNotNull null
+			try {
+				val json = JSONObject(sessionFile.readText())
+				ProjectSummary(
+					id = dir.name,
+					name = json.optString("projectName", dir.name),
+					savedAtMs = json.optLong("savedAtMs", 0L)
+				)
+			} catch (e: Exception) {
+				null
+			}
+		}?.sortedByDescending { it.savedAtMs } ?: emptyList()
+	}
+
+	/** Reads the persisted track path + rebuilds the MarkingSession for [id], but does
+	 * NOT decode audio itself -- decode is a blocking call the caller (a Fragment) should
+	 * run off the main thread, then pass the result to [applyLoadedProject]. */
+	fun readProjectForLoad(context: android.content.Context, id: String): LoadedProjectData? {
+		val dir = File(projectsRoot(context), id)
+		val sessionFile = File(dir, "session.json")
+		if (!sessionFile.exists()) return null
+		return try {
+			val json = JSONObject(sessionFile.readText())
+			val trackFile = File(dir, json.getString("trackFileName"))
+			if (!trackFile.exists()) return null
+			val trackDurationMs = json.optInt("trackDurationMs", 0)
+
+			val marksArray = json.getJSONArray("marks")
+			val marks = (0 until marksArray.length()).map { marksArray.getInt(it) }
+
+			val buttonsArray = json.getJSONArray("buttons")
+			val buttons = (0 until buttonsArray.length()).map { i ->
+				val item = buttonsArray.get(i)
+				if (item == JSONObject.NULL) {
+					null
+				} else {
+					val bo = item as JSONObject
+					ButtonRef(chain = bo.getInt("chain"), x = bo.getInt("x"), y = bo.getInt("y"))
+				}
+			}
+
+			currentProjectId = id
+			LoadedProjectData(trackFile.absolutePath, trackDurationMs, MarkingSession.restore(trackDurationMs, marks, buttons))
+		} catch (e: Exception) {
+			logDebug("Failed to read project $id: ${e.message}")
+			null
+		}
+	}
+
+	/** Applies a project after its track has been decoded (by the caller, off-thread). */
+	fun applyLoadedProject(audio: DecodedAudio, loaded: LoadedProjectData) {
+		_decodedAudio.value = audio
+		cachedFilePath = loaded.trackFilePath
+		_markingSession.value = loaded.session
+		arrowNavIndex = null
+		notifySegmentsChanged()
 	}
 
 	// ---- Jump-to-mark: Place (long-press a cut) asks Mark & Cut to scroll to and
