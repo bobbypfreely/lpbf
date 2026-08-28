@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity() {
 		val tabs = findViewById<TabLayout>(R.id.tabLayout)
 		pager.adapter = ProjectPagerAdapter(this)
 
-		val tabTitles = listOf("Mark & Cut", "Fine-tune", "Place", "Splice")
+		val tabTitles = listOf("Mark & Cut", "Place", "Splice")
 		TabLayoutMediator(tabs, pager) { tab, position ->
 			tab.text = tabTitles[position]
 		}.attach()
@@ -60,5 +60,14 @@ class MainActivity : AppCompatActivity() {
 		// UsbMidiHandlerActivity's intent-filter. A device already plugged in before
 		// the app launches needs an explicit deviceList scan here too -- untested,
 		// flagging as a real-device check item.
+
+			// Long-pressing a cut on Place asks to jump back to Mark & Cut (tab 0) and
+			// highlight its mark; MarkAndCutFragment does the actual scroll+highlight
+			// and clears the request once it's applied.
+			viewModel.jumpToMarkRequest.observe(this) { segIndex ->
+				if (segIndex != null) {
+					pager.setCurrentItem(0, true)
+				}
+			}
 	}
 }

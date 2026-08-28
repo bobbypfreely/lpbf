@@ -6,13 +6,12 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 
 class ProjectPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activity) {
-	override fun getItemCount(): Int = 4
+	override fun getItemCount(): Int = 3
 
 	override fun createFragment(position: Int): Fragment {
 		return when (position) {
 			0 -> MarkAndCutFragment()
-			1 -> FineTuneFragment()
-			2 -> PlaceFragment()
+			1 -> PlaceFragment()
 			else -> SpliceFragment()
 		}
 	}

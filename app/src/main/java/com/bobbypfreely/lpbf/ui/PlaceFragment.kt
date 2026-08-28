@@ -2,53 +2,86 @@ package com.bobbypfreely.lpbf.ui
 
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
+import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import com.bobbypfreely.lpbf.R
-import com.bobbypfreely.lpbf.marking.MarkingSession
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
+import com.bobbypfreely.lpbf.waveform.ExoPlaybackController
 
 /**
- * Place: assigns each provisional segment (from Mark and Cut) to a Launchpad button.
+ * Place: assigns each provisional segment (from Mark and Cut) to a Launchpad button,
+ * and lets you preview the mapping before exporting.
  *
- * Design: an ordered list of segments is shown top to bottom; the first one with no
- * button yet is the "next" target and is highlighted. Tapping any pad -- physical or
- * the on-screen grid below, both routed through ProjectViewModel's PadInputListener --
- * assigns that pad to the next target and auto-advances. Tapping a pad that's already
- * assigned stacks another segment onto it (multi-trigger cycling): MarkingSession
- * doesn't require unique buttons per segment, so this needs no new state, just repeated
- * calls to the same assignNextSegment() path.
+ * Two modes, toggled by placeModeToggle:
+ *  - EDIT (default): tapping a pad assigns the next unassigned cut to it, auto-advancing
+ *    down the ordered list. Tapping an already-assigned pad stacks another cut onto it
+ *    (multi-trigger cycling) -- MarkingSession has no unique-button constraint.
+ *  - PLAY: tapping a pad previews whatever's mapped to it instead of assigning anything.
+ *    Repeated presses on a stacked pad cycle through each cut mapped there.
  *
- * viewModel.isPlaceTabActive gates physical Launchpad presses so a hardware pad hit on
- * another tab doesn't silently reassign something here; it's set true/false from this
- * fragment's own onResume/onPause, so no other file needs to know this tab exists.
+ * Both physical Launchpad presses and on-screen grid taps are routed through the exact
+ * same ProjectViewModel.onPadDown/onPadUp so mode logic only has to live in one place.
+ *
+ * Long-pressing a cut in the list jumps back to Mark & Cut with that mark highlighted,
+ * for quick fine-adjustment without a dedicated screen.
  */
 class PlaceFragment : Fragment(R.layout.fragment_place) {
 
 	private val viewModel: ProjectViewModel by activityViewModels()
 
 	private lateinit var statusText: TextView
+	private lateinit var modeToggle: Button
 	private lateinit var segmentListContainer: LinearLayout
 	private lateinit var grid: VirtualLaunchpadGridView
+
+	private var previewController: ExoPlaybackController? = null
+	private val previewStopHandler = Handler(Looper.getMainLooper())
 
 	override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
 		super.onViewCreated(view, savedInstanceState)
 
 		statusText = view.findViewById(R.id.placeStatusText)
+		modeToggle = view.findViewById(R.id.placeModeToggle)
 		segmentListContainer = view.findViewById(R.id.segmentListContainer)
 		grid = view.findViewById(R.id.placeGrid)
 
-		// Virtual grid taps go through the exact same assignment path as a physical
-		// Launchpad -- PadInputListener doesn't care which one fired it.
+		// Virtual grid taps go through the exact same code path a physical Launchpad
+		// press does -- PadInputListener doesn't care which one fired it, and neither
+		// does the mode logic that lives in ProjectViewModel.
 		grid.listener = object : PadInputListener {
-			override fun onPadDown(x: Int, y: Int) {
-				viewModel.assignNextSegment(x, y)
+			override fun onPadDown(x: Int, y: Int) = viewModel.onPadDown(x, y)
+			override fun onPadUp(x: Int, y: Int) = viewModel.onPadUp(x, y)
+		}
+
+		modeToggle.setOnClickListener {
+			val next = if (viewModel.placeMode.value == ProjectViewModel.PlaceMode.EDIT) {
+				ProjectViewModel.PlaceMode.PLAY
+			} else {
+				ProjectViewModel.PlaceMode.EDIT
 			}
-			override fun onPadUp(x: Int, y: Int) {}
+			viewModel.setPlaceMode(next)
+		}
+
+		viewModel.placeMode.observe(viewLifecycleOwner) { mode ->
+			modeToggle.text = "Mode: ${mode.name.lowercase().replaceFirstChar { it.uppercase() }}"
+			refresh()
+		}
+
+		viewModel.decodedAudio.observe(viewLifecycleOwner) { audio ->
+			if (audio != null) setupPreviewPlayer()
+		}
+
+		viewModel.previewRequest.observe(viewLifecycleOwner) { request ->
+			if (request != null) {
+				playPreview(request.startMs, request.endMs)
+				viewModel.clearPreviewRequest()
+			}
 		}
 
 		viewModel.segmentVersion.observe(viewLifecycleOwner) { refresh() }
@@ -63,7 +96,31 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 	override fun onPause() {
 		super.onPause()
 		viewModel.isPlaceTabActive = false
+		previewStopHandler.removeCallbacksAndMessages(null)
+		previewController?.pause()
 	}
+
+	// ---- Preview playback (Play mode) ----
+
+	private fun setupPreviewPlayer() {
+		val path = viewModel.cachedFilePath ?: return
+		previewController?.release()
+		previewController = ExoPlaybackController(requireContext()).apply { load(path) }
+	}
+
+	private fun playPreview(startMs: Int, endMs: Int) {
+		val controller = previewController ?: run {
+			setupPreviewPlayer()
+			previewController
+		} ?: return
+
+		previewStopHandler.removeCallbacksAndMessages(null)
+		controller.playFrom(startMs)
+		val durationMs = (endMs - startMs).coerceAtLeast(0).toLong()
+		previewStopHandler.postDelayed({ controller.pause() }, durationMs)
+	}
+
+	// ---- Segment list + grid rendering ----
 
 	private fun refresh() {
 		val session = viewModel.markingSession.value
@@ -77,11 +134,12 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 
 		val segments = session.segments()
 		val nextIndex = segments.indexOfFirst { it.button == null }
+		val isPlayMode = viewModel.placeMode.value == ProjectViewModel.PlaceMode.PLAY
 
-		statusText.text = if (nextIndex == -1) {
-			"All ${segments.size} cut(s) assigned. Tap a pad again to stack another cut on it."
-		} else {
-			"Cut ${nextIndex + 1} of ${segments.size} -- tap a pad to assign it."
+		statusText.text = when {
+			isPlayMode -> "Play mode: tap a pad to preview its cut(s)."
+			nextIndex == -1 -> "All ${segments.size} cut(s) assigned. Tap a pad again to stack another cut on it."
+			else -> "Cut ${nextIndex + 1} of ${segments.size} -- tap a pad to assign it."
 		}
 
 		segmentListContainer.removeAllViews()
@@ -91,11 +149,15 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 				setPadding(8, 8, 8, 8)
 				val label = seg.button?.let { "pad (${it.x}, ${it.y})" } ?: "unassigned"
 				text = "Cut ${index + 1}  --  ${seg.durationMs}ms  --  $label"
-				if (index == nextIndex) {
+				if (index == nextIndex && !isPlayMode) {
 					setBackgroundColor(Color.parseColor("#2A2A3E"))
 					setTextColor(Color.parseColor("#00ADB5"))
 				} else {
 					setTextColor(Color.parseColor("#DDDDDD"))
+				}
+				setOnLongClickListener {
+					viewModel.requestJumpToMark(index)
+					true
 				}
 			}
 			segmentListContainer.addView(row)
@@ -107,5 +169,12 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 		segments.forEach { seg ->
 			seg.button?.let { grid.setPadLit(it.x, it.y, litColor) }
 		}
+	}
+
+	override fun onDestroyView() {
+		previewStopHandler.removeCallbacksAndMessages(null)
+		previewController?.release()
+		previewController = null
+		super.onDestroyView()
 	}
 }

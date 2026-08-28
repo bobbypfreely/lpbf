@@ -40,6 +40,9 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 	private data class DragState(val markIndex: Int, val originalMs: Int, val startRawX: Float)
 	private var dragState: DragState? = null
 
+		private var highlightedMarkMs: Int? = null
+		private val highlightClearHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
 	private val pickAudio = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
 		if (uri != null) decodeAndLoad(uri)
 	}
@@ -103,6 +106,13 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		viewModel.debugLog.observe(viewLifecycleOwner) { fullText ->
 			debugLog.text = fullText
 			debugScroll.post { debugScroll.fullScroll(View.FOCUS_DOWN) }
+		}
+
+		viewModel.jumpToMarkRequest.observe(viewLifecycleOwner) { segIndex ->
+			if (segIndex != null) {
+				jumpAndHighlight(segIndex)
+				viewModel.clearJumpToMarkRequest()
+			}
 		}
 	}
 
@@ -169,7 +179,9 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			val ms = markPositions[index]
 			val px = waveformView.millisecsToPixels(ms) - offset
 			val marker = MarkerView(requireContext(), null)
-			marker.setBackgroundResource(R.drawable.marker_handle)
+			marker.setBackgroundResource(
+				if (ms == highlightedMarkMs) R.drawable.marker_handle_highlighted else R.drawable.marker_handle
+			)
 			val lp = FrameLayout.LayoutParams(handleSizePx, handleSizePx)
 			lp.leftMargin = px - handleSizePx / 2
 			lp.topMargin = 0
@@ -178,6 +190,37 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			waveformContainer.addView(marker)
 			markerViews.add(marker)
 		}
+	}
+
+	/** Called when Place long-presses a cut to jump here. Scrolls the waveform so
+	 * the mark ending that segment is roughly centered, and flashes its handle a
+	 * different color for a few seconds so it's easy to find and drag. */
+	private fun jumpAndHighlight(segmentIndex: Int) {
+		val session = viewModel.markingSession.value ?: return
+		if (segmentIndex !in session.segments().indices) return
+		if (!waveformView.hasSoundFile()) return
+
+		val ms = session.segment(segmentIndex).endMs
+		highlightedMarkMs = ms
+		highlightClearHandler.removeCallbacksAndMessages(null)
+
+		val px = waveformView.millisecsToPixels(ms)
+		val visibleWidth = waveformContainer.width.takeIf { it > 0 } ?: waveformView.width
+		var newOffset = px - visibleWidth / 2
+		if (newOffset < 0) newOffset = 0
+		val maxPos = waveformView.maxPos()
+		if (newOffset > maxPos) newOffset = maxPos
+		waveformView.setParameters(waveformView.start, waveformView.end, newOffset)
+		waveformView.invalidate()
+		refreshMarkers()
+		statusText.text = "Jumped to cut ${segmentIndex + 1}'s end mark for editing."
+
+		highlightClearHandler.postDelayed({
+			if (highlightedMarkMs == ms) {
+				highlightedMarkMs = null
+				refreshMarkers()
+			}
+		}, 3000L)
 	}
 
 	private fun makeMarkerListener(markIndex: Int, originalMs: Int) = object : MarkerView.MarkerListener {
@@ -284,6 +327,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 	override fun onDestroyView() {
 		exoController?.release()
 		exoController = null
+		highlightClearHandler.removeCallbacksAndMessages(null)
 		super.onDestroyView()
 	}
 }

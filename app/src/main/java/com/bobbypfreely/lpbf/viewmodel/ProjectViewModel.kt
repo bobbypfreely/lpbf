@@ -104,20 +104,46 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		}
 	}
 
-	// ---- Place: pad press assigns the next unassigned cut, in order. Tapping a pad
-	// that's already assigned stacks another cut onto it (multi-trigger cycling) --
-	// MarkingSession has no unique-button constraint, so this needs no extra state. ----
+	// ---- Place: EDIT mode has pad presses assign the next unassigned cut, in order.
+	// Tapping a pad that's already assigned stacks another cut onto it (multi-trigger
+	// cycling) -- MarkingSession has no unique-button constraint, so this needs no extra
+	// state. PLAY mode instead previews whatever's mapped to that pad; pressing the same
+	// pad repeatedly cycles through every cut stacked on it. ----
+
+	enum class PlaceMode { EDIT, PLAY }
+
+	private val _placeMode = MutableLiveData(PlaceMode.EDIT)
+	val placeMode: LiveData<PlaceMode> = _placeMode
+
+	fun setPlaceMode(mode: PlaceMode) {
+		_placeMode.value = mode
+	}
 
 	/** True only while the Place fragment is the visible tab (set from its onResume/onPause),
-	 * so a physical Launchpad press on another tab can't silently reassign a cut. */
+	 * so a physical Launchpad press on another tab can't silently reassign or preview a cut. */
 	var isPlaceTabActive: Boolean = false
+
+	/** One-shot event: PlaceFragment observes this and actually plays the range, then
+	 * clears it back to null so rotation/re-observe doesn't replay it. */
+	data class PreviewRequest(val startMs: Int, val endMs: Int)
+	private val _previewRequest = MutableLiveData<PreviewRequest?>(null)
+	val previewRequest: LiveData<PreviewRequest?> = _previewRequest
+
+	fun clearPreviewRequest() {
+		_previewRequest.value = null
+	}
+
+	private val previewCycleIndex = HashMap<ButtonRef, Int>()
 
 	override fun onPadDown(x: Int, y: Int) {
 		if (!isPlaceTabActive) {
 			logDebug("Pad DOWN ($x,$y) ignored -- not on Place tab")
 			return
 		}
-		assignNextSegment(x, y)
+		when (_placeMode.value) {
+			PlaceMode.PLAY -> previewPad(x, y)
+			else -> assignNextSegment(x, y)
+		}
 	}
 
 	override fun onPadUp(x: Int, y: Int) {}
@@ -138,6 +164,40 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		session.reassignButton(nextIndex, ButtonRef(chain = 0, x = x, y = y))
 		logDebug("Assigned cut ${nextIndex + 1} -> pad ($x,$y)")
 		notifySegmentsChanged()
+	}
+
+	/** Finds every cut mapped to [x],[y] and previews the next one in line, cycling back
+	 * to the first after the last -- this is what makes a stacked (multi-trigger) pad
+	 * play a different cut each press instead of always the same one. */
+	private fun previewPad(x: Int, y: Int) {
+		val session = _markingSession.value ?: return
+		val button = ButtonRef(chain = 0, x = x, y = y)
+		val matches = session.segments().withIndex().filter { it.value.button == button }
+		if (matches.isEmpty()) {
+			logDebug("Pad ($x,$y): nothing mapped here yet")
+			return
+		}
+
+		val cycle = previewCycleIndex.getOrDefault(button, 0) % matches.size
+		previewCycleIndex[button] = cycle + 1
+		val (segIndex, seg) = matches[cycle]
+		logDebug("Preview pad ($x,$y): cut ${segIndex + 1} (${seg.startMs}-${seg.endMs}ms)")
+		_previewRequest.value = PreviewRequest(seg.startMs, seg.endMs)
+	}
+
+	// ---- Jump-to-mark: Place (long-press a cut) asks Mark & Cut to scroll to and
+	// highlight the mark ending that segment. MainActivity switches tabs; MarkAndCutFragment
+	// does the scroll+highlight itself, both observing the same one-shot event. ----
+
+	private val _jumpToMarkRequest = MutableLiveData<Int?>(null) // segment index whose END mark to highlight
+	val jumpToMarkRequest: LiveData<Int?> = _jumpToMarkRequest
+
+	fun requestJumpToMark(segmentIndex: Int) {
+		_jumpToMarkRequest.value = segmentIndex
+	}
+
+	fun clearJumpToMarkRequest() {
+		_jumpToMarkRequest.value = null
 	}
 
 	// ---- Cap prompt resolution, called from the dialog the UI shows ----

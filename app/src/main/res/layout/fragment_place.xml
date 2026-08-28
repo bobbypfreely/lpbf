@@ -12,6 +12,13 @@
 		android:text="Import and mark a track first."
 		android:textSize="15sp" />
 
+	<Button
+		android:id="@+id/placeModeToggle"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="8dp"
+		android:text="Mode: Edit" />
+
 	<TextView
 		android:layout_width="match_parent"
 		android:layout_height="wrap_content"
