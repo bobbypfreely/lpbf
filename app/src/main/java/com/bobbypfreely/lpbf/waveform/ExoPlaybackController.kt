@@ -2,6 +2,8 @@ package com.bobbypfreely.lpbf.waveform
 
 import android.content.Context
 import android.net.Uri
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -22,6 +24,22 @@ class ExoPlaybackController(context: Context) {
 	var onPlaybackStateChanged: ((Boolean) -> Unit)? = null
 
 	init {
+		// This is a preview/editing tool, not a background media app, and more than one
+		// ExoPlayer instance can be alive at once (Mark & Cut's own player plus Place's
+		// separate preview player). Without this, ExoPlayer's default audio-focus
+		// handling means one instance starting playback silently force-pauses the
+		// other via an audio focus loss callback -- which looks exactly like "Play just
+		// stops working" with no error anywhere. Not requesting focus at all makes every
+		// Play/preview action do exactly what it says, regardless of what else in the
+		// app might be playing.
+		player.setAudioAttributes(
+			AudioAttributes.Builder()
+				.setUsage(C.USAGE_MEDIA)
+				.setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+				.build(),
+			/* handleAudioFocus = */ false
+		)
+
 		player.addListener(object : Player.Listener {
 			override fun onIsPlayingChanged(isPlaying: Boolean) {
 				onPlaybackStateChanged?.invoke(isPlaying)
