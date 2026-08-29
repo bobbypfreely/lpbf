@@ -59,7 +59,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	private val _debugLog = MutableLiveData<String>()
 	val debugLog: LiveData<String> = _debugLog
 
-	private fun logDebug(msg: String) {
+	fun logDebug(msg: String) {
 		synchronized(debugLogBuilder) {
 			debugLogBuilder.append(msg).append('\n')
 			_debugLog.postValue(debugLogBuilder.toString())

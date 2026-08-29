@@ -23,6 +23,10 @@ class ExoPlaybackController(context: Context) {
 	var onPositionUpdate: ((Int) -> Unit)? = null
 	var onPlaybackStateChanged: ((Boolean) -> Unit)? = null
 
+	/** Raw ExoPlayer state/duration/position, piped to the on-screen debug log so a
+	 * silent stall (no crash, no error) can actually be diagnosed instead of guessed at. */
+	var onDebugEvent: ((String) -> Unit)? = null
+
 	init {
 		// This is a preview/editing tool, not a background media app, and more than one
 		// ExoPlayer instance can be alive at once (Mark & Cut's own player plus Place's
@@ -44,11 +48,31 @@ class ExoPlaybackController(context: Context) {
 			override fun onIsPlayingChanged(isPlaying: Boolean) {
 				onPlaybackStateChanged?.invoke(isPlaying)
 			}
+
+			override fun onPlaybackStateChanged(state: Int) {
+				val stateName = when (state) {
+					Player.STATE_IDLE -> "IDLE"
+					Player.STATE_BUFFERING -> "BUFFERING"
+					Player.STATE_READY -> "READY"
+					Player.STATE_ENDED -> "ENDED"
+					else -> "UNKNOWN($state)"
+				}
+				onDebugEvent?.invoke(
+					"ExoPlayer state=$stateName player.duration=${player.duration}ms " +
+						"position=${player.currentPosition}ms playWhenReady=${player.playWhenReady}"
+				)
+			}
+
+			override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+				onDebugEvent?.invoke("ExoPlayer ERROR: ${error.errorCodeName}: ${error.message}")
+			}
 		})
 	}
 
 	fun load(filePath: String) {
-		player.setMediaItem(MediaItem.fromUri(Uri.fromFile(java.io.File(filePath))))
+		val file = java.io.File(filePath)
+		onDebugEvent?.invoke("ExoPlaybackController.load: $filePath (${file.length()} bytes on disk)")
+		player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
 		player.prepare()
 	}
 

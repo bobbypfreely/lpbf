@@ -166,6 +166,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		val path = viewModel.cachedFilePath ?: return
 		exoController?.release()
 		val controller = ExoPlaybackController(requireContext())
+		controller.onDebugEvent = { msg -> viewModel.logDebug(msg) }
 		controller.load(path)
 		controller.onPlaybackStateChanged = { playing ->
 			activity?.runOnUiThread {
