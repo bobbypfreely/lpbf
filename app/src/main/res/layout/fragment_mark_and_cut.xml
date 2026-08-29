@@ -35,6 +35,30 @@
 
 	</LinearLayout>
 
+	<LinearLayout
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="8dp"
+		android:orientation="horizontal">
+
+		<Button
+			android:id="@+id/importPreCutButton"
+			android:layout_width="0dp"
+			android:layout_height="wrap_content"
+			android:layout_weight="1"
+			android:layout_marginEnd="4dp"
+			android:text="Import Pre-Cut Tracks" />
+
+		<Button
+			android:id="@+id/importUnipackButton"
+			android:layout_width="0dp"
+			android:layout_height="wrap_content"
+			android:layout_weight="1"
+			android:layout_marginStart="4dp"
+			android:text="Import Unipack" />
+
+	</LinearLayout>
+
 	<TextView
 		android:id="@+id/connectionText"
 		android:layout_width="match_parent"

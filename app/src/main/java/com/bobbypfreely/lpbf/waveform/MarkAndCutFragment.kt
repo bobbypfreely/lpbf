@@ -61,6 +61,14 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		if (uri != null) decodeAndLoad(uri)
 	}
 
+	private val pickPreCutTracks = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+		if (uris.isNotEmpty()) importPreCutTracks(uris)
+	}
+
+	private val pickUnipack = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+		if (uri != null) importUnipack(uri)
+	}
+
 	override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
 		super.onViewCreated(view, savedInstanceState)
 
@@ -83,6 +91,12 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 		view.findViewById<Button>(R.id.saveProjectButton).setOnClickListener { showSaveProjectDialog() }
 		view.findViewById<Button>(R.id.loadProjectButton).setOnClickListener { showLoadProjectDialog() }
+		view.findViewById<Button>(R.id.importPreCutButton).setOnClickListener {
+			pickPreCutTracks.launch(arrayOf("audio/*"))
+		}
+		view.findViewById<Button>(R.id.importUnipackButton).setOnClickListener {
+			pickUnipack.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*"))
+		}
 		view.findViewById<Button>(R.id.zoomInButton).setOnClickListener {
 			waveformView.zoomIn(); waveformView.invalidate(); refreshMarkers()
 		}
@@ -421,6 +435,101 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			}
 		}
 		return tempFile
+	}
+
+	// ---- Import pre-cut tracks / Unipack: both funnel into MultiClipImporter, which
+	// concatenates whatever's picked into one synthetic timeline with auto-generated
+	// marks -- reusing the exact same MarkingSession/Place/Splice pipeline as anything
+	// cut by hand, with zero changes to that pipeline. ----
+
+	private fun copyUriToUniqueCacheFile(context: android.content.Context, uri: Uri, index: Int): java.io.File {
+		val displayName = queryDisplayName(context, uri) ?: "import_$index"
+		val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+		val tempFile = java.io.File(context.cacheDir, "lpbf_multi_${System.currentTimeMillis()}_${index}_$safeName")
+		val input = context.contentResolver.openInputStream(uri) ?: error("Could not open input stream for $uri")
+		input.use { inStream ->
+			tempFile.outputStream().use { outStream -> inStream.copyTo(outStream) }
+		}
+		return tempFile
+	}
+
+	private fun queryDisplayName(context: android.content.Context, uri: Uri): String? {
+		return try {
+			context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+				if (cursor.moveToFirst()) {
+					val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+					if (idx >= 0) cursor.getString(idx) else null
+				} else null
+			}
+		} catch (e: Exception) {
+			null
+		}
+	}
+
+	private fun importPreCutTracks(uris: List<Uri>) {
+		val context = requireContext().applicationContext
+		statusText.text = "Importing ${uris.size} track(s)\u2026"
+		thread(name = "lpbf-import-precut") {
+			try {
+				val sources = uris.mapIndexed { index, uri ->
+					val file = copyUriToUniqueCacheFile(context, uri, index)
+					com.bobbypfreely.lpbf.audio.ImportClipSource(filePath = file.absolutePath, button = null)
+				}
+				val result = com.bobbypfreely.lpbf.audio.MultiClipImporter.buildConcatenatedImport(sources, context.cacheDir)
+				activity?.runOnUiThread {
+					viewModel.applyMultiClipImport(result)
+					statusText.text = if (result.skipped.isEmpty()) {
+						"Imported ${result.buttons.size} pre-cut track(s)."
+					} else {
+						"Imported ${result.buttons.size} track(s), skipped ${result.skipped.size}: ${result.skipped.joinToString("; ")}"
+					}
+				}
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "Pre-cut import failed", e)
+				activity?.runOnUiThread { statusText.text = "Import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
+			}
+		}
+	}
+
+	private fun importUnipack(uri: Uri) {
+		val context = requireContext().applicationContext
+		statusText.text = "Importing Unipack\u2026"
+		thread(name = "lpbf-import-unipack") {
+			try {
+				val zipCopy = copyUriToUniqueCacheFile(context, uri, 0)
+				val extractDir = java.io.File(context.cacheDir, "lpbf_unipack_extract_${System.currentTimeMillis()}")
+				com.bobbypfreely.lpbf.unipack.UnipackReader.extractZip(zipCopy, extractDir)
+				val read = com.bobbypfreely.lpbf.unipack.UnipackReader.read(extractDir)
+
+				val sources = read.entries.map { entry ->
+					val soundFile = java.io.File(read.soundsDir, entry.soundRelativePath)
+					com.bobbypfreely.lpbf.audio.ImportClipSource(filePath = soundFile.absolutePath, button = entry.button)
+				}
+				if (sources.isEmpty()) {
+					activity?.runOnUiThread { statusText.text = "Unipack has no sounds mapped -- nothing to import." }
+					return@thread
+				}
+
+				val result = com.bobbypfreely.lpbf.audio.MultiClipImporter.buildConcatenatedImport(sources, context.cacheDir)
+				activity?.runOnUiThread {
+					viewModel.applyMultiClipImport(result)
+					val summary = StringBuilder("Imported Unipack '${read.info.title}' -- ${result.buttons.size} cut(s).")
+					if (read.info.chainCount > 8) {
+						summary.append(" Note: this pack uses ${read.info.chainCount} chains; Place only exposes chains 1-8 for editing right now.")
+					}
+					if (result.skipped.isNotEmpty()) {
+						summary.append(" Skipped ${result.skipped.size}: ${result.skipped.joinToString("; ")}")
+					}
+					if (read.warnings.isNotEmpty()) {
+						summary.append(" Warnings: ${read.warnings.joinToString("; ")}")
+					}
+					statusText.text = summary.toString()
+				}
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "Unipack import failed", e)
+				activity?.runOnUiThread { statusText.text = "Unipack import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
+			}
+		}
 	}
 
 	override fun onResume() {

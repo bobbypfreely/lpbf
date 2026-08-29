@@ -378,6 +378,19 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		notifySegmentsChanged()
 	}
 
+	/** Applies a completed concatenated import (plain "pre-cut tracks" pick, or a
+	 * Unipack's keySound mapping read via UnipackReader) as a brand new project --
+	 * reuses MarkingSession.restore() exactly like project load does, since both are
+	 * really the same operation: "here's a track + marks + buttons, make it current." */
+	fun applyMultiClipImport(result: com.bobbypfreely.lpbf.audio.MultiClipImportResult) {
+		_decodedAudio.value = result.decodedAudio
+		cachedFilePath = result.cachedFilePath
+		_markingSession.value = MarkingSession.restore(result.decodedAudio.totalDurationMs, result.marks, result.buttons)
+		currentProjectId = null
+		arrowNavIndex = null
+		notifySegmentsChanged()
+	}
+
 	// ---- Jump-to-mark: Place (long-press a cut) asks Mark & Cut to scroll to and
 	// highlight the mark ending that segment. MainActivity switches tabs; MarkAndCutFragment
 	// does the scroll+highlight itself, both observing the same one-shot event. ----
