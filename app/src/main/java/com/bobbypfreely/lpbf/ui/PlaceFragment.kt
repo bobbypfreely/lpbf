@@ -223,13 +223,24 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 
 		// Only light pads assigned on the chain currently being viewed -- a real
 		// Launchpad's grid only ever shows the 64 pads of its currently selected chain.
+		// Label each lit pad with the order it was FIRST placed in (1, 2, 3...) so a
+		// sequence is readable at a glance; a stacked (multi-trigger) pad shows the
+		// earliest cut's number since that's when the pad itself entered the sequence.
 		grid.clearAllPads()
 		val litColor = Color.parseColor("#00ADB5")
-		segments.forEach { seg ->
+		val firstIndexByPad = HashMap<Pair<Int, Int>, Int>()
+		segments.forEachIndexed { index, seg ->
 			val button = seg.button
 			if (button != null && button.chain == activeChain) {
-				grid.setPadLit(button.x, button.y, litColor)
+				val key = button.x to button.y
+				val existing = firstIndexByPad[key]
+				if (existing == null || index < existing) {
+					firstIndexByPad[key] = index
+				}
 			}
+		}
+		firstIndexByPad.forEach { (pad, index) ->
+			grid.setPadLit(pad.first, pad.second, litColor, (index + 1).toString())
 		}
 	}
 

@@ -25,26 +25,42 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 
 	/** External callers (e.g. showing which button a segment is assigned to) can light specific pads. */
 	private val litPads = HashMap<Pair<Int, Int>, Int>() // (x,y) -> ARGB color
+	private val padLabels = HashMap<Pair<Int, Int>, String>() // (x,y) -> label text (e.g. placement order)
 
 	private val cellPaintOff = Paint().apply { color = Color.parseColor("#2A2A3E"); isAntiAlias = true }
 	private val cellPaintPressed = Paint().apply { color = Color.parseColor("#00ADB5"); isAntiAlias = true }
+	private val labelPaint = Paint().apply {
+		color = Color.parseColor("#0F0F1A")
+		isAntiAlias = true
+		textAlign = Paint.Align.CENTER
+		isFakeBoldText = true
+	}
 	private val gapPx = 6f
 	private val cornerRadius = 10f
 
 	private var pressedCell: Pair<Int, Int>? = null
 
-	fun setPadLit(x: Int, y: Int, color: Int) {
+	/** [label] is optional text drawn centered on the pad -- Place uses this to show
+	 * each pad's placement order (1, 2, 3...) so a sequence is easy to read at a glance. */
+	fun setPadLit(x: Int, y: Int, color: Int, label: String? = null) {
 		litPads[x to y] = color
+		if (label != null) {
+			padLabels[x to y] = label
+		} else {
+			padLabels.remove(x to y)
+		}
 		invalidate()
 	}
 
 	fun clearPad(x: Int, y: Int) {
 		litPads.remove(x to y)
+		padLabels.remove(x to y)
 		invalidate()
 	}
 
 	fun clearAllPads() {
 		litPads.clear()
+		padLabels.clear()
 		invalidate()
 	}
 
@@ -68,6 +84,13 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 					else -> cellPaintOff
 				}
 				canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
+
+				val label = padLabels[gx to gy]
+				if (label != null) {
+					labelPaint.textSize = cellH * 0.4f
+					val textY = rect.centerY() - (labelPaint.descent() + labelPaint.ascent()) / 2
+					canvas.drawText(label, rect.centerX(), textY, labelPaint)
+				}
 			}
 		}
 	}
