@@ -184,11 +184,17 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 
 	private fun togglePlayPause() {
 		val controller = exoController ?: return
-		val session = viewModel.markingSession.value ?: return
 		if (controller.isPlaying) {
 			controller.pause()
 		} else {
-			controller.playFrom(session.lastMarkMs())
+			// Resume from wherever playback actually left off. This used to jump to
+			// session.lastMarkMs() instead, which made sense back when dropMark() always
+			// paused playback (lastMarkMs() ~= where you'd just paused) -- but that
+			// auto-pause was removed so marking wouldn't interrupt playback. For a
+			// heavily-marked project (many marks packed near the end, e.g. an import),
+			// lastMarkMs() sits close to the very end of the track, so every Play press
+			// jumped there, played a sliver, and hit ENDED almost immediately.
+			controller.playFrom(controller.currentPositionMs())
 		}
 	}
 
