@@ -1,5 +1,7 @@
 package com.bobbypfreely.lpbf.marking
 
+import com.bobbypfreely.lpbf.lightshow.Pattern
+
 /**
  * Manages the full lifecycle of cutting one source track into ordered Clips:
  *   1. Live tap-marking (recordMark) while playing the track
@@ -8,27 +10,40 @@ package com.bobbypfreely.lpbf.marking
  *
  * Marks are stored as plain millisecond positions, index 0 is always a fixed
  * mark at 0 (the track's start) and is never itself movable or removable.
- * Segment N is the gap between marks[N] and marks[N+1]; segmentButtons is a
- * parallel list so a segment's button assignment is independent of the marks
- * that bound it.
+ * Segment N is the gap between marks[N] and marks[N+1]; segmentButtons and
+ * segmentPatterns are parallel lists so a segment's button assignment and
+ * lightshow are each independent of the marks that bound it.
  *
- * Nothing here touches actual audio -- this only tracks timestamps and button
- * assignments. Real PCM slicing happens downstream once splice() returns.
+ * Nothing here touches actual audio or LED compilation -- this only tracks
+ * timestamps, button assignments, and (duration-agnostic) light Patterns.
+ * Real PCM slicing and keyLED event compilation both happen downstream once
+ * splice() returns.
  */
 class MarkingSession(private val trackDurationMs: Int) {
 
 	companion object {
 		const val MAX_SEGMENT_MS = 8000
 
-		/** Rebuilds a session from previously-saved marks/buttons (project resume).
+		/** Rebuilds a session from previously-saved marks/buttons/patterns (project resume).
 		 * Bypasses recordMark()'s live-input validation since this data was already
-		 * valid when it was saved -- restoring it isn't a new user action to check. */
-		fun restore(trackDurationMs: Int, marks: List<Int>, buttons: List<ButtonRef?>): MarkingSession {
+		 * valid when it was saved -- restoring it isn't a new user action to check.
+		 * [patterns] defaults to all-null (matches every pre-existing call site, which
+		 * predates lightshow patterns existing at all). */
+		fun restore(
+			trackDurationMs: Int,
+			marks: List<Int>,
+			buttons: List<ButtonRef?>,
+			patterns: List<Pattern?> = List(buttons.size) { null },
+		): MarkingSession {
 			val session = MarkingSession(trackDurationMs)
 			session.marks.clear()
 			session.marks.addAll(marks)
 			session.segmentButtons.clear()
 			session.segmentButtons.addAll(buttons)
+			session.segmentPatterns.clear()
+			session.segmentPatterns.addAll(
+				if (patterns.size == buttons.size) patterns else List(buttons.size) { null }
+			)
 			return session
 		}
 	}
@@ -40,8 +55,9 @@ class MarkingSession(private val trackDurationMs: Int) {
 
 	private val marks = mutableListOf(0)
 	private val segmentButtons = mutableListOf<ButtonRef?>()
+	private val segmentPatterns = mutableListOf<Pattern?>()
 
-	private data class Snapshot(val marks: List<Int>, val buttons: List<ButtonRef?>)
+	private data class Snapshot(val marks: List<Int>, val buttons: List<ButtonRef?>, val patterns: List<Pattern?>)
 	private val undoStack = ArrayDeque<Snapshot>()
 	private val redoStack = ArrayDeque<Snapshot>()
 
@@ -53,7 +69,7 @@ class MarkingSession(private val trackDurationMs: Int) {
 	val segmentCount: Int get() = segmentButtons.size
 
 	fun segment(index: Int): Segment {
-		return Segment(marks[index], marks[index + 1], segmentButtons[index])
+		return Segment(marks[index], marks[index + 1], segmentButtons[index], segmentPatterns[index])
 	}
 
 	fun segments(): List<Segment> = (0 until segmentCount).map { segment(it) }
@@ -61,10 +77,11 @@ class MarkingSession(private val trackDurationMs: Int) {
 	fun lastMarkMs(): Int = marks.last()
 
 	/** Read-only snapshots of internal state, for project save/resume. Paired with
-	 * [restore] below -- together these let a session be fully serialized and
+	 * [restore] above -- together these let a session be fully serialized and
 	 * reconstructed without going through recordMark()'s live-input validation. */
 	fun marksSnapshot(): List<Int> = marks.toList()
 	fun buttonsSnapshot(): List<ButtonRef?> = segmentButtons.toList()
+	fun patternsSnapshot(): List<Pattern?> = segmentPatterns.toList()
 
 	// ---- Phase 1: live tap-marking ----------------------------------------
 
@@ -104,6 +121,7 @@ class MarkingSession(private val trackDurationMs: Int) {
 		pushUndoSnapshot()
 		marks.add(atMs)
 		segmentButtons.add(button)
+		segmentPatterns.add(null)
 		return RecordResult.Committed(segmentCount - 1, atMs - marks[marks.size - 2])
 	}
 
@@ -158,10 +176,20 @@ class MarkingSession(private val trackDurationMs: Int) {
 		segmentButtons[segmentIndex] = button
 	}
 
+	/** Sets (or clears, with null) the lightshow Pattern for a provisional segment. Freely
+	 * editable pre-splice, same as reassignButton -- nothing is compiled to keyLED events
+	 * until splice(). */
+	fun assignPattern(segmentIndex: Int, pattern: Pattern?) {
+		checkNotSpliced()
+		require(segmentIndex in segmentPatterns.indices) { "Segment index $segmentIndex is out of range" }
+		pushUndoSnapshot()
+		segmentPatterns[segmentIndex] = pattern
+	}
+
 	// ---- Undo / redo (scoped to this session only) -------------------------
 
 	private fun pushUndoSnapshot() {
-		undoStack.addLast(Snapshot(marks.toList(), segmentButtons.toList()))
+		undoStack.addLast(Snapshot(marks.toList(), segmentButtons.toList(), segmentPatterns.toList()))
 		redoStack.clear()
 	}
 
@@ -171,20 +199,21 @@ class MarkingSession(private val trackDurationMs: Int) {
 	fun undo() {
 		checkNotSpliced()
 		val snap = undoStack.removeLastOrNull() ?: return
-		redoStack.addLast(Snapshot(marks.toList(), segmentButtons.toList()))
+		redoStack.addLast(Snapshot(marks.toList(), segmentButtons.toList(), segmentPatterns.toList()))
 		restoreSnapshot(snap)
 	}
 
 	fun redo() {
 		checkNotSpliced()
 		val snap = redoStack.removeLastOrNull() ?: return
-		undoStack.addLast(Snapshot(marks.toList(), segmentButtons.toList()))
+		undoStack.addLast(Snapshot(marks.toList(), segmentButtons.toList(), segmentPatterns.toList()))
 		restoreSnapshot(snap)
 	}
 
 	private fun restoreSnapshot(snap: Snapshot) {
 		marks.clear(); marks.addAll(snap.marks)
 		segmentButtons.clear(); segmentButtons.addAll(snap.buttons)
+		segmentPatterns.clear(); segmentPatterns.addAll(snap.patterns)
 	}
 
 	// ---- Phase 3: splice ----------------------------------------------------
@@ -203,7 +232,7 @@ class MarkingSession(private val trackDurationMs: Int) {
 		}
 		isSpliced = true
 		val clips = segments().mapIndexed { i, seg ->
-			CommittedClip(index = i + 1, startMs = seg.startMs, endMs = seg.endMs, button = seg.button)
+			CommittedClip(index = i + 1, startMs = seg.startMs, endMs = seg.endMs, button = seg.button, lightPattern = seg.lightPattern)
 		}
 		return SpliceResult.Success(clips)
 	}

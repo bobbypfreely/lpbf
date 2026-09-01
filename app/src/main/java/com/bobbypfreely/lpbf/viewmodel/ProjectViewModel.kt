@@ -4,6 +4,8 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import com.bobbypfreely.lpbf.audio.DecodedAudio
+import com.bobbypfreely.lpbf.lightshow.LightshowColorWheel
+import com.bobbypfreely.lpbf.lightshow.Pattern
 import com.bobbypfreely.lpbf.marking.ButtonRef
 import com.bobbypfreely.lpbf.marking.MarkingSession
 import com.bobbypfreely.lpbf.ui.PadInputListener
@@ -150,8 +152,16 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	private val previewCycleIndex = HashMap<ButtonRef, Int>()
 
 	override fun onPadDown(x: Int, y: Int) {
+		if (isLightshowTabActive) {
+			if (_selectedLightshowSegment.value != null) {
+				_lightshowPadPress.value = LightshowPadPress(x, y, currentColorVelocity())
+			} else {
+				selectLightshowPad(x, y)
+			}
+			return
+		}
 		if (!isPlaceTabActive) {
-			logDebug("Pad DOWN ($x,$y) ignored -- not on Place tab")
+			logDebug("Pad DOWN ($x,$y) ignored -- not on Place or Lightshow tab")
 			return
 		}
 		when (_placeMode.value) {
@@ -164,9 +174,20 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	override fun onPadUp(x: Int, y: Int) {}
 
 	/** A real Launchpad's 8 side buttons page between its 8 chains -- keep the app's
-	 * selected chain in sync with whichever one is actually lit on the hardware. */
+	 * selected chain in sync with whichever one is actually lit on the hardware. On
+	 * Lightshow, the same 8 physical buttons instead mean "pick this hue" while a cut
+	 * is selected for editing -- Place's paging behavior only applies on Place. */
 	override fun onChainTouch(c: Int, upDown: Boolean) {
-		if (upDown && isPlaceTabActive) {
+		if (!upDown) return
+		if (isLightshowTabActive) {
+			if (_selectedLightshowSegment.value != null) {
+				setColorHueSlot(c)
+			} else {
+				setCurrentChain(c)
+			}
+			return
+		}
+		if (isPlaceTabActive) {
 			setCurrentChain(c)
 		}
 	}
@@ -229,6 +250,104 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		_previewRequest.value = PreviewRequest(seg.startMs, seg.endMs)
 	}
 
+	// ---- Lightshow: mirrors Place's "select a mapped pad" interaction, but for editing
+	// that cut's light Pattern instead of assigning audio. Only pads that already have a
+	// segment mapped to them (on the currently-viewed chain) can be selected -- tapping an
+	// unmapped pad is a no-op, since there's no cut to attach a lightshow to yet. Tapping
+	// the same pad again cycles through any stacked cuts on it, same convention as Place's
+	// previewCycleIndex. Nothing is compiled to keyLED events here -- LightshowFragment
+	// only ever calls assignLightPatternToSelected(), same "provisional until Finalize"
+	// rule audio and Place already follow. ----
+
+	/** True only while the Lightshow fragment is the visible tab. */
+	var isLightshowTabActive: Boolean = false
+
+	/** Index into markingSession.segments() of the cut currently being edited, or null
+	 * when nothing is selected (LightshowFragment shows the mapped-pad overview instead). */
+	private val _selectedLightshowSegment = MutableLiveData<Int?>(null)
+	val selectedLightshowSegment: LiveData<Int?> = _selectedLightshowSegment
+
+	private val lightshowCycleIndex = HashMap<ButtonRef, Int>()
+
+	/** Finds every cut mapped to (x,y) on the current chain and selects the next one in
+	 * line for editing, cycling back to the first after the last -- mirrors previewPad()
+	 * in Place. No-op if nothing is mapped there yet. */
+	private fun selectLightshowPad(x: Int, y: Int) {
+		val session = _markingSession.value ?: return
+		val button = ButtonRef(chain = _currentChain.value ?: 0, x = x, y = y)
+		val matches = session.segments().withIndex().filter { it.value.button == button }
+		if (matches.isEmpty()) {
+			logDebug("Lightshow pad ($x,$y): nothing mapped here yet")
+			return
+		}
+		val cycle = lightshowCycleIndex.getOrDefault(button, 0) % matches.size
+		lightshowCycleIndex[button] = cycle + 1
+		val (segIndex, _) = matches[cycle]
+		_selectedLightshowSegment.value = segIndex
+		logDebug("Lightshow pad ($x,$y): editing cut ${segIndex + 1}")
+	}
+
+	/** Returns to the mapped-pad overview without discarding anything already saved. */
+	fun deselectLightshowSegment() {
+		_selectedLightshowSegment.value = null
+	}
+
+	/** One-shot: fired instead of re-selecting when a pad (virtual or physical) is pressed
+	 * while a cut is already selected for editing -- LightshowFragment observes this and
+	 * appends a light event at (x,y) using the given velocity, since only the fragment
+	 * knows the in-progress event list and current authoring time. [velocity] is the
+	 * palette index the hardware/virtual color picker was showing at the moment of the
+	 * press, captured here so a later color-picker change can't retroactively alter an
+	 * already-placed event. */
+	data class LightshowPadPress(val x: Int, val y: Int, val velocity: Int)
+	private val _lightshowPadPress = MutableLiveData<LightshowPadPress?>(null)
+	val lightshowPadPress: LiveData<LightshowPadPress?> = _lightshowPadPress
+
+	fun clearLightshowPadPress() {
+		_lightshowPadPress.value = null
+	}
+
+	/** Commits [pattern] (or clears it, with null) as the currently-selected cut's lightshow. */
+	fun assignLightPatternToSelected(pattern: Pattern?) {
+		val session = _markingSession.value ?: return
+		val index = _selectedLightshowSegment.value ?: return
+		session.assignPattern(index, pattern)
+		notifySegmentsChanged()
+	}
+
+	// -- Hardware color picker: 8 chain buttons = hue slot (see LightshowColorWheel),
+	// Up/Down = saturation step, Left/Right = also step hue. Resolves to a real palette
+	// velocity (0-127), never arbitrary RGB, matching what real keyLED files contain. --
+
+	private val _colorHueSlot = MutableLiveData(LightshowColorWheel.SLOT_RED)
+	val colorHueSlot: LiveData<Int> = _colorHueSlot
+
+	private val _colorSaturationLevel = MutableLiveData(0)
+	val colorSaturationLevel: LiveData<Int> = _colorSaturationLevel
+
+	/** The palette velocity (0-127) the current hue+saturation selection resolves to. */
+	fun currentColorVelocity(): Int =
+		LightshowColorWheel.velocityFor(_colorHueSlot.value ?: 0, _colorSaturationLevel.value ?: 0)
+
+	fun setColorHueSlot(slot: Int) {
+		_colorHueSlot.value = slot.coerceIn(0, LightshowColorWheel.SLOT_NAMES.size - 1)
+		_colorSaturationLevel.value = 0
+	}
+
+	fun stepHue(delta: Int) {
+		val count = LightshowColorWheel.SLOT_NAMES.size
+		val next = (((_colorHueSlot.value ?: 0) + delta) % count + count) % count
+		setColorHueSlot(next)
+	}
+
+	fun stepSaturation(delta: Int) {
+		val slot = _colorHueSlot.value ?: 0
+		val steps = LightshowColorWheel.saturationSteps(slot)
+		if (steps <= 0) return
+		val next = ((_colorSaturationLevel.value ?: 0) + delta).coerceIn(0, steps - 1)
+		_colorSaturationLevel.value = next
+	}
+
 	// ---- Mark & Cut arrow-key navigation: left/right jumps between marks on a
 	// physical Launchpad's top-row function keys. Reuses the same jump/highlight
 	// mechanism Place's long-press already triggers -- this is just another way to
@@ -240,7 +359,20 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	private var arrowNavIndex: Int? = null
 
 	override fun onFunctionKeyTouch(f: Int, upDown: Boolean) {
-		if (!upDown || !isMarkAndCutTabActive) return
+		if (!upDown) return
+
+		if (isLightshowTabActive) {
+			if (_selectedLightshowSegment.value == null) return
+			when (f) {
+				0 -> stepSaturation(+1) // Up: more saturated/vivid
+				1 -> stepSaturation(-1) // Down: softer
+				2 -> stepHue(-1)        // Left: previous hue (also reachable via chain buttons)
+				3 -> stepHue(+1)        // Right: next hue
+			}
+			return
+		}
+
+		if (!isMarkAndCutTabActive) return
 		val session = _markingSession.value ?: return
 		if (session.segmentCount == 0) return
 
@@ -257,7 +389,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 				arrowNavIndex = next
 				requestJumpToMark(next)
 			}
-			// 0 (Up), 1 (Down): no assigned behavior yet
+			// 0 (Up), 1 (Down): no assigned behavior yet on Mark & Cut
 		}
 	}
 
@@ -310,6 +442,10 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		}
 		json.put("buttons", buttonsArray)
 
+		val patternsArray = JSONArray()
+		session.patternsSnapshot().forEach { p -> patternsArray.put(patternToJson(p)) }
+		json.put("patterns", patternsArray)
+
 		File(dir, "session.json").writeText(json.toString())
 		logDebug("Saved project '$name' (id=$id)")
 		return true
@@ -361,8 +497,17 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 				}
 			}
 
+			// Older saved projects predate lightshow patterns -- default to all-null so
+			// they still load cleanly instead of throwing on a missing key.
+			val patternsArray = json.optJSONArray("patterns")
+			val patterns = if (patternsArray != null) {
+				(0 until patternsArray.length()).map { i -> patternFromJson(patternsArray.opt(i)) }
+			} else {
+				List(buttons.size) { null }
+			}
+
 			currentProjectId = id
-			LoadedProjectData(trackFile.absolutePath, trackDurationMs, MarkingSession.restore(trackDurationMs, marks, buttons))
+			LoadedProjectData(trackFile.absolutePath, trackDurationMs, MarkingSession.restore(trackDurationMs, marks, buttons, patterns))
 		} catch (e: Exception) {
 			logDebug("Failed to read project $id: ${e.message}")
 			null
@@ -426,5 +571,52 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 
 	fun resolveCapCancel() {
 		_capPrompt.value = null
+	}
+
+	// ---- Pattern <-> JSON, used only by save/load above. Kept minimal -- Pattern's
+	// fields are all primitives already, this just avoids pulling in a JSON library
+	// wrapper for four fields. ----
+
+	private fun patternToJson(pattern: Pattern?): Any {
+		if (pattern == null) return JSONObject.NULL
+		val po = JSONObject()
+		po.put("name", pattern.name)
+		val keyframesArray = JSONArray()
+		pattern.keyframes.forEach { kf ->
+			val ko = JSONObject()
+			ko.put("t", kf.t.toDouble())
+			ko.put("x", kf.x)
+			ko.put("y", kf.y)
+			ko.put("on", kf.on)
+			ko.put("velocity", kf.velocity)
+			if (kf.color != null) ko.put("color", kf.color) else ko.put("color", JSONObject.NULL)
+			keyframesArray.put(ko)
+		}
+		po.put("keyframes", keyframesArray)
+		return po
+	}
+
+	private fun patternFromJson(value: Any?): Pattern? {
+		if (value == null || value == JSONObject.NULL) return null
+		return try {
+			val po = value as JSONObject
+			val name = po.optString("name", "")
+			val keyframesArray = po.getJSONArray("keyframes")
+			val keyframes = (0 until keyframesArray.length()).map { i ->
+				val ko = keyframesArray.getJSONObject(i)
+				com.bobbypfreely.lpbf.lightshow.Keyframe(
+					t = ko.getDouble("t").toFloat(),
+					x = ko.getInt("x"),
+					y = ko.getInt("y"),
+					on = ko.getBoolean("on"),
+					velocity = ko.getInt("velocity"),
+					color = if (ko.isNull("color")) null else ko.getInt("color"),
+				)
+			}
+			Pattern(name, keyframes)
+		} catch (e: Exception) {
+			logDebug("Failed to parse saved lightshow pattern: ${e.message}")
+			null
+		}
 	}
 }

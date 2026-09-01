@@ -27,6 +27,10 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 	private val litPads = HashMap<Pair<Int, Int>, Int>() // (x,y) -> ARGB color
 	private val padLabels = HashMap<Pair<Int, Int>, String>() // (x,y) -> label text (e.g. placement order)
 
+	/** Border-only outline, distinct from a filled lit pad -- Lightshow uses this to mark
+	 * "has audio mapped, not currently selected" without implying the pad is actually on. */
+	private val highlightedPads = HashMap<Pair<Int, Int>, Int>() // (x,y) -> ARGB stroke color
+
 	private val cellPaintOff = Paint().apply { color = Color.parseColor("#2A2A3E"); isAntiAlias = true }
 	private val cellPaintPressed = Paint().apply { color = Color.parseColor("#00ADB5"); isAntiAlias = true }
 	private val labelPaint = Paint().apply {
@@ -34,6 +38,11 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 		isAntiAlias = true
 		textAlign = Paint.Align.CENTER
 		isFakeBoldText = true
+	}
+	private val highlightPaint = Paint().apply {
+		isAntiAlias = true
+		style = Paint.Style.STROKE
+		strokeWidth = 5f
 	}
 	private val gapPx = 6f
 	private val cornerRadius = 10f
@@ -64,6 +73,22 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 		invalidate()
 	}
 
+	/** Outlines (x,y) in [color] without filling it -- used for "mapped but not selected" pads. */
+	fun setPadHighlighted(x: Int, y: Int, color: Int) {
+		highlightedPads[x to y] = color
+		invalidate()
+	}
+
+	fun clearHighlight(x: Int, y: Int) {
+		highlightedPads.remove(x to y)
+		invalidate()
+	}
+
+	fun clearAllHighlights() {
+		highlightedPads.clear()
+		invalidate()
+	}
+
 	override fun onDraw(canvas: Canvas) {
 		super.onDraw(canvas)
 		val cellW = width.toFloat() / gridWidth
@@ -84,6 +109,14 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 					else -> cellPaintOff
 				}
 				canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
+
+				val highlightColor = highlightedPads[gx to gy]
+				if (highlightColor != null) {
+					highlightPaint.color = highlightColor
+					val inset = highlightPaint.strokeWidth / 2
+					val hRect = RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset)
+					canvas.drawRoundRect(hRect, cornerRadius, cornerRadius, highlightPaint)
+				}
 
 				val label = padLabels[gx to gy]
 				if (label != null) {

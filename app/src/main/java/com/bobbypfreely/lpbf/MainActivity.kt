@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity() {
 		val tabs = findViewById<TabLayout>(R.id.tabLayout)
 		pager.adapter = ProjectPagerAdapter(this)
 
-		val tabTitles = listOf("Mark & Cut", "Place", "Splice")
+		val tabTitles = listOf("Mark & Cut", "Place", "Lightshow", "Splice")
 		TabLayoutMediator(tabs, pager) { tab, position ->
 			tab.text = tabTitles[position]
 		}.attach()
