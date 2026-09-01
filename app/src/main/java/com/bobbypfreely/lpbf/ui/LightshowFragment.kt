@@ -234,10 +234,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		events.add(EditEvent(x, y, velocity, authoringTimeMs, authoringDurationMs))
 		events.sortBy { it.startMs }
 		viewModel.logDebug("Lightshow: placed pad ($x,$y) vel=$velocity at ${authoringTimeMs}ms for ${authoringDurationMs}ms")
-		// Auto-advance so the next tap lands after this one by default -- still freely
-		// adjustable via the steppers before the next tap.
-		authoringTimeMs += authoringDurationMs
-		timeText.text = "Time: ${authoringTimeMs}ms"
 		refresh()
 	}
 
