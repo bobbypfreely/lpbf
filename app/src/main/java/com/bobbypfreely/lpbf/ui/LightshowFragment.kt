@@ -11,6 +11,7 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import com.bobbypfreely.lpbf.R
+import com.bobbypfreely.lpbf.audio.AudioPlaybackController
 import com.bobbypfreely.lpbf.lightshow.Keyframe
 import com.bobbypfreely.lpbf.lightshow.LightshowColorWheel
 import com.bobbypfreely.lpbf.lightshow.Pattern
@@ -32,8 +33,10 @@ import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
  *    (see LightshowColorWheel) -- Up/Down steps saturation, Left/Right also steps hue.
  *    Tapping any pad on the grid places a light event there at the current authoring
  *    time, using the current color, for the current duration. Play previews the whole
- *    assembled sequence (virtual grid + real hardware if connected); Save compiles the
- *    event list into a duration-agnostic Pattern and stores it on the segment.
+ *    assembled sequence -- virtual grid, real hardware if connected, AND this cut's
+ *    actual audio seeked to its own startMs -- so you can hear whether the lights and
+ *    sound line up, not just watch the lights alone. Save compiles the event list into
+ *    a duration-agnostic Pattern and stores it on the segment.
  *
  * Both physical Launchpad presses and on-screen grid taps route through the same
  * ProjectViewModel.onPadDown/onChainTouch/onFunctionKeyTouch Place already uses --
@@ -54,6 +57,13 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
 	private val hardwareButtons = mutableListOf<Button>()
 	private val previewHandler = Handler(Looper.getMainLooper())
+
+	/** Built fresh against whichever DecodedAudio is current each time Play is pressed --
+	 * cheap to construct, and this avoids holding a stale reference across a project
+	 * switch. Plays the real decoded track (same PCM Mark and Cut and Place already
+	 * share), seeked to this cut's own startMs, so Play previews audio and lights
+	 * together instead of lights alone. */
+	private var audioPreview: AudioPlaybackController? = null
 
 	// ---- Local editing state for whichever cut is currently selected. Reset whenever
 	// the ViewModel's selection changes. Nothing here is durable until Save. ----
@@ -259,12 +269,27 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 				driver.sendPadLed(ev.x, ev.y, 0)
 			}, (ev.startMs + ev.durationMs).toLong())
 		}
+
+		// Play the real cut's audio alongside the lights, so you can hear whether they
+		// line up -- not just watch the lights in isolation.
+		val audio = viewModel.decodedAudio.value
+		val segmentIndex = viewModel.selectedLightshowSegment.value
+		val session = viewModel.markingSession.value
+		if (audio != null && segmentIndex != null && session != null) {
+			val segment = session.segment(segmentIndex)
+			val controller = AudioPlaybackController(audio)
+			audioPreview = controller
+			controller.playFrom(segment.startMs)
+			previewHandler.postDelayed({ controller.stop() }, segment.durationMs.toLong())
+		}
 	}
 
 	private fun stopPreview() {
 		previewHandler.removeCallbacksAndMessages(null)
 		val driver = MidiConnection.driver
 		events.forEach { ev -> driver.sendPadLed(ev.x, ev.y, 0) }
+		audioPreview?.stop()
+		audioPreview = null
 	}
 
 	// ---- Save: compile the event list into a duration-agnostic Pattern ----

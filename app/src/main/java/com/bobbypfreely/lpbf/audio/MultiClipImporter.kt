@@ -1,19 +1,29 @@
 package com.bobbypfreely.lpbf.audio
 
+import com.bobbypfreely.lpbf.lightshow.KeyLedReader
+import com.bobbypfreely.lpbf.lightshow.Pattern
 import com.bobbypfreely.lpbf.marking.ButtonRef
 import java.io.ByteArrayOutputStream
 import java.io.File
 
 /** One audio source to fold into a concatenated import timeline, with an optional
  * pre-existing button assignment (used when importing a Unipack's keySound mapping;
- * left null for a plain "import pre-cut tracks" pick where nothing's mapped yet). */
-data class ImportClipSource(val filePath: String, val button: ButtonRef? = null)
+ * left null for a plain "import pre-cut tracks" pick where nothing's mapped yet).
+ * [rawLedEvents] is that source's matching keyLED file, if any, already parsed but
+ * still in absolute-ms form -- converting to a duration-agnostic Pattern needs this
+ * source's own decoded duration, which isn't known until this class decodes it below. */
+data class ImportClipSource(
+	val filePath: String,
+	val button: ButtonRef? = null,
+	val rawLedEvents: List<KeyLedReader.TimedEvent>? = null,
+)
 
 data class MultiClipImportResult(
 	val decodedAudio: DecodedAudio,
 	val cachedFilePath: String,
 	val marks: List<Int>,          // includes leading 0, same format MarkingSession.restore() expects
 	val buttons: List<ButtonRef?>, // one per segment, size == marks.size - 1
+	val patterns: List<Pattern?>,  // one per segment, size == buttons.size, all-null unless the source was a Unipack with keyLED files
 	val skipped: List<String>,     // human-readable reasons any source didn't make it in
 )
 
@@ -34,6 +44,7 @@ object MultiClipImporter {
 		val pcmOut = ByteArrayOutputStream()
 		val marks = mutableListOf(0)
 		val buttons = mutableListOf<ButtonRef?>()
+		val patterns = mutableListOf<Pattern?>()
 		val skipped = mutableListOf<String>()
 		var cumulativeMs = 0
 
@@ -60,6 +71,11 @@ object MultiClipImporter {
 			cumulativeMs += decoded.totalDurationMs
 			marks.add(cumulativeMs)
 			buttons.add(source.button)
+			patterns.add(
+				source.rawLedEvents?.let { events ->
+					KeyLedReader.toPattern(File(source.filePath).nameWithoutExtension, events, decoded.totalDurationMs)
+				}
+			)
 		}
 
 		check(referenceSampleRate != -1) { "Every source failed to decode -- nothing to import" }
@@ -76,6 +92,7 @@ object MultiClipImporter {
 			cachedFilePath = outFile.absolutePath,
 			marks = marks,
 			buttons = buttons,
+			patterns = patterns,
 			skipped = skipped,
 		)
 	}

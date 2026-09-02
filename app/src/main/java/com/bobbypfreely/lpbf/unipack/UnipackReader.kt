@@ -22,6 +22,7 @@ data class UnipackReadResult(
 	val info: UnipackInfo,
 	val entries: List<UnipackKeySoundEntry>,
 	val soundsDir: File,
+	val keyLedDir: File?,
 	val warnings: List<String>,
 )
 
@@ -38,10 +39,16 @@ data class UnipackReadResult(
  *                     exactly LPBF's own multi-trigger stacking, so it needs no special
  *                     handling here at all, just import each line as its own segment.
  *   sounds/           the actual audio files keySound's soundFileName refers to.
+ *   keyLed/           optional -- one file per button mapping (matched to keySound
+ *                     entries 1:1 in file order, see KeyLedReader), each containing that
+ *                     cut's own lightshow. Parsed by the caller via KeyLedReader, not
+ *                     here -- this class only locates the folder, since turning it into
+ *                     Patterns needs each sound's decoded duration, which isn't known
+ *                     until MultiClipImporter decodes it.
  *
- * Only info + keySound (the audio/mapping data) are read. keyLed/autoPlay (lightshow +
- * auto-play data) aren't parsed yet -- that's the next piece of work, once LPBF's own
- * lightshow generation exists to make use of them.
+ * info + keySound (the audio/mapping data) are always read. keyLedDir is exposed but
+ * left unparsed for the same reason noted above -- if the pack has no keyLed folder,
+ * this is simply null and callers skip lightshow import for it.
  */
 object UnipackReader {
 
@@ -78,6 +85,7 @@ object UnipackReader {
 			?: throw IllegalArgumentException("Not a Unipack -- 'keySound' file missing")
 		val soundsDir = actualRoot.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("sounds", ignoreCase = true) }
 			?: throw IllegalArgumentException("Not a Unipack -- 'sounds' folder missing")
+		val keyLedDir = actualRoot.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("keyLed", ignoreCase = true) }
 
 		var title = ""
 		var producerName = ""
@@ -138,6 +146,7 @@ object UnipackReader {
 			info = UnipackInfo(title, producerName, buttonX, buttonY, chainCount, squareButton, website),
 			entries = entries,
 			soundsDir = soundsDir,
+			keyLedDir = keyLedDir,
 			warnings = warnings,
 		)
 	}

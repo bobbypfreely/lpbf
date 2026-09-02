@@ -508,9 +508,30 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				com.bobbypfreely.lpbf.unipack.UnipackReader.extractZip(zipCopy, extractDir)
 				val read = com.bobbypfreely.lpbf.unipack.UnipackReader.read(extractDir)
 
+				val occurrenceCount = mutableMapOf<com.bobbypfreely.lpbf.marking.ButtonRef, Int>()
 				val sources = read.entries.map { entry ->
 					val soundFile = java.io.File(read.soundsDir, entry.soundRelativePath)
-					com.bobbypfreely.lpbf.audio.ImportClipSource(filePath = soundFile.absolutePath, button = entry.button)
+					val occurrence = occurrenceCount.getOrDefault(entry.button, 0)
+					occurrenceCount[entry.button] = occurrence + 1
+
+					val rawLedEvents = read.keyLedDir?.let { dir ->
+						com.bobbypfreely.lpbf.lightshow.KeyLedReader.findFile(
+							dir, entry.button.chain, entry.button.x, entry.button.y, occurrence
+						)?.let { file ->
+							try {
+								com.bobbypfreely.lpbf.lightshow.KeyLedReader.parse(file)
+							} catch (e: Exception) {
+								android.util.Log.w("MarkAndCutFragment", "Couldn't parse keyLED file ${file.name}", e)
+								null
+							}
+						}
+					}
+
+					com.bobbypfreely.lpbf.audio.ImportClipSource(
+						filePath = soundFile.absolutePath,
+						button = entry.button,
+						rawLedEvents = rawLedEvents,
+					)
 				}
 				if (sources.isEmpty()) {
 					activity?.runOnUiThread { statusText.text = "Unipack has no sounds mapped -- nothing to import." }
@@ -521,6 +542,12 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				activity?.runOnUiThread {
 					viewModel.applyMultiClipImport(result)
 					val summary = StringBuilder("Imported Unipack '${read.info.title}' -- ${result.buttons.size} cut(s).")
+					val lightshowCount = result.patterns.count { it != null }
+					if (lightshowCount > 0) {
+						summary.append(" $lightshowCount with an existing lightshow.")
+					} else if (read.keyLedDir == null) {
+						summary.append(" No keyLed folder in this pack -- nothing to import there.")
+					}
 					if (read.info.chainCount > 8) {
 						summary.append(" Note: this pack uses ${read.info.chainCount} chains; Place only exposes chains 1-8 for editing right now.")
 					}

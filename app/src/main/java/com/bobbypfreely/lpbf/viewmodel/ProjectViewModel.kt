@@ -530,7 +530,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	fun applyMultiClipImport(result: com.bobbypfreely.lpbf.audio.MultiClipImportResult) {
 		_decodedAudio.value = result.decodedAudio
 		cachedFilePath = result.cachedFilePath
-		_markingSession.value = MarkingSession.restore(result.decodedAudio.totalDurationMs, result.marks, result.buttons)
+		_markingSession.value = MarkingSession.restore(result.decodedAudio.totalDurationMs, result.marks, result.buttons, result.patterns)
 		currentProjectId = null
 		arrowNavIndex = null
 		notifySegmentsChanged()
