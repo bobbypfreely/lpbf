@@ -72,8 +72,12 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	var cachedFilePath: String? = null
 
 	fun setDecodedAudio(audio: DecodedAudio, filePath: String) {
-		_decodedAudio.value = audio
+		// cachedFilePath must be set BEFORE _decodedAudio.value -- LiveData notifies
+		// observers synchronously on that assignment, and MarkAndCutFragment's observer
+		// reads cachedFilePath to load the player. Setting it after left the player
+		// loading a stale (or null, on the very first import) path every time.
 		cachedFilePath = filePath
+		_decodedAudio.value = audio
 		_markingSession.value = MarkingSession(audio.totalDurationMs)
 		notifySegmentsChanged()
 	}
@@ -516,8 +520,8 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 
 	/** Applies a project after its track has been decoded (by the caller, off-thread). */
 	fun applyLoadedProject(audio: DecodedAudio, loaded: LoadedProjectData) {
-		_decodedAudio.value = audio
 		cachedFilePath = loaded.trackFilePath
+		_decodedAudio.value = audio
 		_markingSession.value = loaded.session
 		arrowNavIndex = null
 		notifySegmentsChanged()
@@ -528,8 +532,8 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	 * reuses MarkingSession.restore() exactly like project load does, since both are
 	 * really the same operation: "here's a track + marks + buttons, make it current." */
 	fun applyMultiClipImport(result: com.bobbypfreely.lpbf.audio.MultiClipImportResult) {
-		_decodedAudio.value = result.decodedAudio
 		cachedFilePath = result.cachedFilePath
+		_decodedAudio.value = result.decodedAudio
 		_markingSession.value = MarkingSession.restore(result.decodedAudio.totalDurationMs, result.marks, result.buttons, result.patterns)
 		currentProjectId = null
 		arrowNavIndex = null
