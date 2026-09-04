@@ -329,13 +329,27 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	private val _colorSaturationLevel = MutableLiveData(0)
 	val colorSaturationLevel: LiveData<Int> = _colorSaturationLevel
 
-	/** The palette velocity (0-127) the current hue+saturation selection resolves to. */
+	/** Set only by nudgeVelocity() below -- lets you dial in ANY of the 128 real palette
+	 * entries directly, not just the curated hue/saturation ladders (those only reach
+	 * 122 of 128 by design, grouped for a clean 8-button feel; this is the escape hatch
+	 * for the rest, or for picking a specific neighbor of a ladder entry). Cleared
+	 * whenever a hue or saturation is explicitly chosen, so picking Red always gives a
+	 * clean, predictable color to nudge from -- it doesn't fight a leftover override.
+	 */
+	private val _colorVelocityOverride = MutableLiveData<Int?>(null)
+	val colorVelocityOverride: LiveData<Int?> = _colorVelocityOverride
+
+	/** The palette velocity (0-127) the current selection resolves to -- either the
+	 * hue+saturation ladder pick, or the raw override if nudgeVelocity() has been used
+	 * since the last hue/saturation change. */
 	fun currentColorVelocity(): Int =
-		LightshowColorWheel.velocityFor(_colorHueSlot.value ?: 0, _colorSaturationLevel.value ?: 0)
+		_colorVelocityOverride.value
+			?: LightshowColorWheel.velocityFor(_colorHueSlot.value ?: 0, _colorSaturationLevel.value ?: 0)
 
 	fun setColorHueSlot(slot: Int) {
 		_colorHueSlot.value = slot.coerceIn(0, LightshowColorWheel.SLOT_NAMES.size - 1)
 		_colorSaturationLevel.value = 0
+		_colorVelocityOverride.value = null
 	}
 
 	fun stepHue(delta: Int) {
@@ -350,6 +364,17 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		if (steps <= 0) return
 		val next = ((_colorSaturationLevel.value ?: 0) + delta).coerceIn(0, steps - 1)
 		_colorSaturationLevel.value = next
+		_colorVelocityOverride.value = null
+	}
+
+	/** Nudges the current velocity by [delta] (typically +-1), wrapping past either end
+	 * of the full 0-127 palette -- e.g. 127 + 1 wraps to 0, 0 - 1 wraps to 127. This is
+	 * the direct fix for "we can't add different colors": every one of the 128 real
+	 * palette entries is reachable this way, not just the ones in a hue's ladder. */
+	fun nudgeVelocity(delta: Int) {
+		val base = currentColorVelocity()
+		val next = ((base + delta) % 128 + 128) % 128
+		_colorVelocityOverride.value = next
 	}
 
 	// ---- Mark & Cut arrow-key navigation: left/right jumps between marks on a

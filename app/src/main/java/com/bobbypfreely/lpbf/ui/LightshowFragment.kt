@@ -50,13 +50,26 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 	private lateinit var rowLabel: TextView
 	private lateinit var buttonRow: LinearLayout
 	private lateinit var editControls: LinearLayout
+	private lateinit var velocityText: TextView
+	private lateinit var stepRow: LinearLayout
 	private lateinit var timeText: TextView
 	private lateinit var durationText: TextView
+	private lateinit var timeMinus: Button
+	private lateinit var timePlus: Button
+	private lateinit var durationMinus: Button
+	private lateinit var durationPlus: Button
 	private lateinit var eventListContainer: LinearLayout
 	private lateinit var grid: VirtualLaunchpadGridView
 
 	private val hardwareButtons = mutableListOf<Button>()
+	private val stepButtons = mutableListOf<Button>()
 	private val previewHandler = Handler(Looper.getMainLooper())
+
+	/** Shared granularity for both Time and Duration's -/+ buttons. 50ms was the only
+	 * option originally and left no room for fine placement -- this is user-selectable
+	 * now, defaulting back to 50 since that's still the most common case. */
+	private val stepOptions = intArrayOf(10, 25, 50, 100)
+	private var stepMs = 50
 
 	/** Built fresh against whichever DecodedAudio is current each time Play is pressed --
 	 * cheap to construct, and this avoids holding a stale reference across a project
@@ -82,12 +95,19 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		rowLabel = view.findViewById(R.id.lightshowRowLabel)
 		buttonRow = view.findViewById(R.id.lightshowButtonRow)
 		editControls = view.findViewById(R.id.lightshowEditControls)
+		velocityText = view.findViewById(R.id.lightshowVelocityText)
+		stepRow = view.findViewById(R.id.lightshowStepRow)
 		timeText = view.findViewById(R.id.lightshowTimeText)
 		durationText = view.findViewById(R.id.lightshowDurationText)
+		timeMinus = view.findViewById(R.id.lightshowTimeMinus)
+		timePlus = view.findViewById(R.id.lightshowTimePlus)
+		durationMinus = view.findViewById(R.id.lightshowDurationMinus)
+		durationPlus = view.findViewById(R.id.lightshowDurationPlus)
 		eventListContainer = view.findViewById(R.id.lightshowEventListContainer)
 		grid = view.findViewById(R.id.lightshowGrid)
 
 		buildHardwareButtonRow()
+		buildStepRow()
 
 		// Same principle as Place: virtual grid taps and physical Launchpad presses both
 		// funnel through ProjectViewModel.onPadDown, so this fragment never has to know
@@ -97,10 +117,12 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 			override fun onPadUp(x: Int, y: Int) {}
 		}
 
-		view.findViewById<Button>(R.id.lightshowTimeMinus).setOnClickListener { adjustTime(-50) }
-		view.findViewById<Button>(R.id.lightshowTimePlus).setOnClickListener { adjustTime(+50) }
-		view.findViewById<Button>(R.id.lightshowDurationMinus).setOnClickListener { adjustDuration(-50) }
-		view.findViewById<Button>(R.id.lightshowDurationPlus).setOnClickListener { adjustDuration(+50) }
+		timeMinus.setOnClickListener { adjustTime(-stepMs) }
+		timePlus.setOnClickListener { adjustTime(+stepMs) }
+		durationMinus.setOnClickListener { adjustDuration(-stepMs) }
+		durationPlus.setOnClickListener { adjustDuration(+stepMs) }
+		view.findViewById<Button>(R.id.lightshowVelocityMinus).setOnClickListener { viewModel.nudgeVelocity(-1) }
+		view.findViewById<Button>(R.id.lightshowVelocityPlus).setOnClickListener { viewModel.nudgeVelocity(+1) }
 		view.findViewById<Button>(R.id.lightshowPlay).setOnClickListener { playPreview() }
 		view.findViewById<Button>(R.id.lightshowStop).setOnClickListener { stopPreview() }
 		view.findViewById<Button>(R.id.lightshowSave).setOnClickListener { saveAndDeselect() }
@@ -111,8 +133,9 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
 		viewModel.selectedLightshowSegment.observe(viewLifecycleOwner) { onSelectionChanged(it) }
 		viewModel.currentChain.observe(viewLifecycleOwner) { refresh() }
-		viewModel.colorHueSlot.observe(viewLifecycleOwner) { refreshHardwareButtonHighlight() }
-		viewModel.colorSaturationLevel.observe(viewLifecycleOwner) { refreshHardwareButtonHighlight() }
+		viewModel.colorHueSlot.observe(viewLifecycleOwner) { refreshHardwareButtonHighlight(); refreshVelocityText() }
+		viewModel.colorSaturationLevel.observe(viewLifecycleOwner) { refreshVelocityText() }
+		viewModel.colorVelocityOverride.observe(viewLifecycleOwner) { refreshVelocityText() }
 		viewModel.segmentVersion.observe(viewLifecycleOwner) { refresh() }
 		viewModel.markingSession.observe(viewLifecycleOwner) { refresh() }
 
@@ -176,6 +199,53 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 				button.setTextColor(Color.parseColor("#DDDDDD"))
 			}
 		}
+	}
+
+	// ---- Step-size selector: governs both Time and Duration's -/+ granularity ----
+
+	private fun buildStepRow() {
+		stepRow.removeAllViews()
+		stepButtons.clear()
+		stepOptions.forEachIndexed { i, step ->
+			val button = Button(requireContext()).apply {
+				text = "${step}ms"
+				textSize = 11f
+				layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+					marginEnd = if (i < stepOptions.size - 1) 4 else 0
+				}
+				setPadding(0, 8, 0, 8)
+				setOnClickListener { setStep(step) }
+			}
+			stepRow.addView(button)
+			stepButtons.add(button)
+		}
+		refreshStepHighlight()
+	}
+
+	private fun setStep(step: Int) {
+		stepMs = step
+		refreshStepHighlight()
+		timeMinus.text = "-$stepMs"
+		timePlus.text = "+$stepMs"
+		durationMinus.text = "-$stepMs"
+		durationPlus.text = "+$stepMs"
+	}
+
+	private fun refreshStepHighlight() {
+		stepButtons.forEachIndexed { i, button ->
+			val isActive = stepOptions[i] == stepMs
+			if (isActive) {
+				button.setBackgroundColor(Color.parseColor("#00ADB5"))
+				button.setTextColor(Color.parseColor("#0F0F1A"))
+			} else {
+				button.setBackgroundColor(Color.parseColor("#1A1A2E"))
+				button.setTextColor(Color.parseColor("#DDDDDD"))
+			}
+		}
+	}
+
+	private fun refreshVelocityText() {
+		velocityText.text = "Velocity: ${viewModel.currentColorVelocity()}"
 	}
 
 	// ---- Selection changes: enter/exit edit mode, load any existing pattern back in ----
