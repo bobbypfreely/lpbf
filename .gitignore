@@ -23,9 +23,12 @@ misc.xml
 deploymentTargetDropDown.xml
 render.experimental.xml
 
-# Keystore files
+# Keystore files -- except our committed debug keystore (app/lpbf-debug.keystore),
+# which MUST be tracked so every CI build signs with the same cert. Real release
+# keys still get ignored by these two rules.
 *.jks
 *.keystore
+!app/lpbf-debug.keystore
 
 # Google Services (e.g. APIs or Firebase)
 google-services.json
