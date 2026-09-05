@@ -525,17 +525,158 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 	 * sounds/keyLed directly -- e.g. a Unipack someone already unzipped, or one being
 	 * hand-assembled. UnipackReader.read() already works on a plain folder either way,
 	 * so this just needs to get that folder's contents onto local disk first, since a
-	 * SAF tree Uri isn't a java.io.File and can't be read the same way. */
+	 * SAF tree Uri isn't a java.io.File and can't be read the same way.
+	 *
+	 * If the picked folder is missing keySound+sounds, or missing keyLed, this asks
+	 * whether to pull the missing piece from a second folder instead of just failing --
+	 * covers loading a pack that has its keyLED files organized separately from its
+	 * audio, without needing a whole separate "Import keySound" / "Import keyLED"
+	 * screen with its own parsing logic. */
 	private fun importUnipackFolder(treeUri: Uri) {
 		val context = requireContext().applicationContext
 		statusText.text = "Importing Unipack folder\u2026"
 		thread(name = "lpbf-import-unipack-folder") {
 			try {
 				val extractDir = copyDocumentTreeToCache(context, treeUri)
-				importFromExtractedDir(context, extractDir)
+				checkAudioThenKeyLedThenFinish(extractDir)
 			} catch (e: Exception) {
 				android.util.Log.e("MarkAndCutFragment", "Unipack folder import failed", e)
 				activity?.runOnUiThread { statusText.text = "Unipack folder import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
+			}
+		}
+	}
+
+	private enum class MergeKind { AUDIO, KEYLED }
+	private var pendingUnipackExtractDir: java.io.File? = null
+	private var pendingMergeKind: MergeKind? = null
+
+	private val pickMergeFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+		val extractDir = pendingUnipackExtractDir
+		val kind = pendingMergeKind
+		pendingUnipackExtractDir = null
+		pendingMergeKind = null
+		if (uri == null || extractDir == null || kind == null) {
+			if (extractDir != null) finishUnipackImport(extractDir)
+			return@registerForActivityResult
+		}
+		when (kind) {
+			MergeKind.AUDIO -> mergeAudioFolderAndContinue(uri, extractDir)
+			MergeKind.KEYLED -> mergeKeyLedFolderAndContinue(uri, extractDir)
+		}
+	}
+
+	/** Checks the two pieces this app actually needs in order -- audio first (nothing's
+	 * importable without it), then keyLed -- prompting to fill in whichever's missing
+	 * from a second folder before finally importing. */
+	private fun checkAudioThenKeyLedThenFinish(extractDir: java.io.File) {
+		val hasKeySound = extractDir.listFiles()?.any { it.isFile && it.name.equals("keySound", ignoreCase = true) } == true
+		val hasSounds = extractDir.listFiles()?.any { it.isDirectory && it.name.equals("sounds", ignoreCase = true) } == true
+		if (!hasKeySound || !hasSounds) {
+			activity?.runOnUiThread { promptForMissingAudio(extractDir) }
+		} else {
+			checkKeyLedThenFinish(extractDir)
+		}
+	}
+
+	private fun checkKeyLedThenFinish(extractDir: java.io.File) {
+		val hasKeyLed = extractDir.listFiles()?.any { it.isDirectory && it.name.equals("keyLed", ignoreCase = true) } == true
+		if (!hasKeyLed) {
+			activity?.runOnUiThread { promptForMissingKeyLed(extractDir) }
+		} else {
+			finishUnipackImport(extractDir)
+		}
+	}
+
+	private fun promptForMissingAudio(extractDir: java.io.File) {
+		AlertDialog.Builder(requireContext())
+			.setTitle("No keySound/sounds found")
+			.setMessage("This folder is missing the keySound file and/or the sounds folder. Import them from a different location?")
+			.setPositiveButton("Yes") { _, _ ->
+				pendingUnipackExtractDir = extractDir
+				pendingMergeKind = MergeKind.AUDIO
+				pickMergeFolder.launch(null)
+			}
+			.setNegativeButton("Cancel") { _, _ -> statusText.text = "Import cancelled -- nothing playable without audio." }
+			.setCancelable(false)
+			.show()
+	}
+
+	private fun promptForMissingKeyLed(extractDir: java.io.File) {
+		AlertDialog.Builder(requireContext())
+			.setTitle("No keyLED files found")
+			.setMessage("This folder has no keyLed folder. Import keyLED files from a different location too?")
+			.setPositiveButton("Yes") { _, _ ->
+				pendingUnipackExtractDir = extractDir
+				pendingMergeKind = MergeKind.KEYLED
+				pickMergeFolder.launch(null)
+			}
+			.setNegativeButton("No, audio only") { _, _ -> finishUnipackImport(extractDir) }
+			.setCancelable(false)
+			.show()
+	}
+
+	/** Merges a second picked folder's keySound file + sounds folder into [extractDir],
+	 * then re-checks for keyLed the same as the normal path would. */
+	private fun mergeAudioFolderAndContinue(pickedUri: Uri, extractDir: java.io.File) {
+		val context = requireContext().applicationContext
+		statusText.text = "Adding keySound/sounds\u2026"
+		thread(name = "lpbf-merge-audio") {
+			try {
+				val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, pickedUri)
+					?: error("Could not open the selected folder")
+				val keySoundDoc = findChild(root, "keySound", wantDir = false)
+				val soundsDoc = findChild(root, "sounds", wantDir = true)
+				if (keySoundDoc == null || soundsDoc == null) {
+					activity?.runOnUiThread { statusText.text = "That folder doesn't have both a keySound file and a sounds folder." }
+					return@thread
+				}
+				context.contentResolver.openInputStream(keySoundDoc.uri)?.use { input ->
+					java.io.File(extractDir, "keySound").outputStream().use { output -> input.copyTo(output) }
+				}
+				val soundsDir = java.io.File(extractDir, "sounds").apply { mkdirs() }
+				copyDocumentFileTree(context, soundsDoc, soundsDir)
+				checkKeyLedThenFinish(extractDir)
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "Audio merge failed", e)
+				activity?.runOnUiThread { statusText.text = "Couldn't add keySound/sounds: ${e.message}" }
+			}
+		}
+	}
+
+	/** Merges a second picked folder's keyLed files into [extractDir]/keyLed, then
+	 * finishes the import. Accepts either a folder that directly contains a "keyLed"
+	 * subfolder, or the keyLed folder itself picked directly. */
+	private fun mergeKeyLedFolderAndContinue(pickedUri: Uri, extractDir: java.io.File) {
+		val context = requireContext().applicationContext
+		statusText.text = "Adding keyLED files\u2026"
+		thread(name = "lpbf-merge-keyled") {
+			try {
+				val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, pickedUri)
+					?: error("Could not open the selected folder")
+				val keyLedSource = findChild(root, "keyLed", wantDir = true) ?: root
+				val keyLedDir = java.io.File(extractDir, "keyLed").apply { mkdirs() }
+				copyDocumentFileTree(context, keyLedSource, keyLedDir)
+				finishUnipackImport(extractDir)
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "keyLed merge failed", e)
+				activity?.runOnUiThread { statusText.text = "Couldn't add keyLED files: ${e.message}. Importing audio only." }
+				finishUnipackImport(extractDir)
+			}
+		}
+	}
+
+	private fun findChild(root: androidx.documentfile.provider.DocumentFile, name: String, wantDir: Boolean): androidx.documentfile.provider.DocumentFile? {
+		return root.listFiles().firstOrNull { it.name?.equals(name, ignoreCase = true) == true && it.isDirectory == wantDir }
+	}
+
+	private fun finishUnipackImport(extractDir: java.io.File) {
+		val context = requireContext().applicationContext
+		thread(name = "lpbf-finish-unipack-import") {
+			try {
+				importFromExtractedDir(context, extractDir)
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "Unipack import failed", e)
+				activity?.runOnUiThread { statusText.text = "Unipack import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
 			}
 		}
 	}
