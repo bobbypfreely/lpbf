@@ -480,6 +480,117 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		return true
 	}
 
+	// ---- Create Unipack: the real final export. Splices marks into real clips, compiles
+	// each cut's lightPattern (if any) to keyLED text, assembles everything into a real
+	// Unipack zip via UnipackWriter, and saves it somewhere the user can actually find
+	// it -- Documents/lpbf/ -- rather than app-private storage. ----
+
+	sealed class UnipackExportResult {
+		data class Success(val displayPath: String, val soundCount: Int, val lightshowCount: Int) : UnipackExportResult()
+		data class Blocked(val overCapSegmentIndices: List<Int>) : UnipackExportResult()
+		object NothingToExport : UnipackExportResult()
+		data class Failed(val message: String) : UnipackExportResult()
+	}
+
+	fun createUnipack(context: android.content.Context, title: String, producerName: String): UnipackExportResult {
+		val session = _markingSession.value ?: return UnipackExportResult.NothingToExport
+		val audio = _decodedAudio.value ?: return UnipackExportResult.NothingToExport
+
+		val clips = when (val result = session.splice()) {
+			is MarkingSession.SpliceResult.Blocked -> return UnipackExportResult.Blocked(result.overCapSegmentIndices)
+			is MarkingSession.SpliceResult.Success -> result.clips
+		}
+		if (clips.isEmpty()) return UnipackExportResult.NothingToExport
+
+		val exported = com.bobbypfreely.lpbf.audio.ClipExporter.export(audio, clips)
+		val clipsByFileName = clips.associateBy { it.fileName }
+
+		// Same (chain,x,y) can appear on more than one cut (multi-trigger stacking) --
+		// each additional one gets a lettered keyLED filename, matching how real packs
+		// disambiguate stacked mappings (see KeyLedReader's docs on this exact scheme).
+		val occurrenceCount = mutableMapOf<Triple<Int, Int, Int>, Int>()
+		var lightshowCount = 0
+
+		val entries = exported.mapNotNull { ex ->
+			val clip = clipsByFileName[ex.fileName] ?: return@mapNotNull null
+			val button = ex.button ?: return@mapNotNull null
+
+			var keyLedFileName: String? = null
+			var keyLedText: String? = null
+			val pattern = clip.lightPattern
+			val key = Triple(button.chain, button.x, button.y)
+			val occurrence = occurrenceCount.getOrDefault(key, 0)
+			occurrenceCount[key] = occurrence + 1
+
+			if (pattern != null) {
+				val ledEvents = com.bobbypfreely.lpbf.lightshow.PatternCompiler.compile(pattern, ex.preciseDurationMs)
+				keyLedText = com.bobbypfreely.lpbf.lightshow.KeyLedWriter.write(ledEvents)
+				val base = com.bobbypfreely.lpbf.lightshow.KeyLedWriter.fileName(button.chain, button.x, button.y, 1)
+				keyLedFileName = if (occurrence == 0) base else "$base ${'a' + occurrence - 1}"
+				lightshowCount++
+			}
+
+			com.bobbypfreely.lpbf.unipack.UnipackWriter.SoundEntry(
+				button = button,
+				soundFileName = ex.fileName,
+				wavBytes = ex.wavBytes,
+				keyLedFileName = keyLedFileName,
+				keyLedText = keyLedText,
+			)
+		}
+		if (entries.isEmpty()) return UnipackExportResult.NothingToExport
+
+		val chainCount = (entries.maxOf { it.button.chain }) + 1
+		val safeTitle = title.trim().ifEmpty { "Untitled" }
+		val fileName = safeTitle.replace(Regex("[^A-Za-z0-9 _-]"), "_") + ".zip"
+
+		return try {
+			val displayPath = saveToDocumentsLpbf(context, fileName) { out ->
+				com.bobbypfreely.lpbf.unipack.UnipackWriter.write(
+					output = out,
+					title = safeTitle,
+					producerName = producerName.trim(),
+					buttonX = 8,
+					buttonY = 8,
+					chainCount = chainCount.coerceAtLeast(1),
+					entries = entries,
+				)
+			} ?: return UnipackExportResult.Failed("Could not create the file in Documents/lpbf")
+
+			logDebug("Created Unipack '$fileName' -> $displayPath (${entries.size} sounds, $lightshowCount lightshows)")
+			UnipackExportResult.Success(displayPath, entries.size, lightshowCount)
+		} catch (e: Exception) {
+			logDebug("Create Unipack failed: ${e.message}")
+			UnipackExportResult.Failed(e.message ?: "Unknown error")
+		}
+	}
+
+	/** Writes to Documents/lpbf/ via MediaStore on Android 10+ (no permission needed for
+	 * the app's own files there) and falls back to the legacy public-Documents path on
+	 * older devices. Returns a human-readable path for the success message, or null on
+	 * failure. */
+	private fun saveToDocumentsLpbf(context: android.content.Context, fileName: String, writer: (java.io.OutputStream) -> Unit): String? {
+		if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+			val resolver = context.contentResolver
+			val values = android.content.ContentValues().apply {
+				put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+				put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/zip")
+				put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Documents/lpbf")
+			}
+			val collection = android.provider.MediaStore.Files.getContentUri("external")
+			val uri = resolver.insert(collection, values) ?: return null
+			resolver.openOutputStream(uri)?.use { writer(it) } ?: return null
+			return "Documents/lpbf/$fileName"
+		}
+
+		@Suppress("DEPRECATION")
+		val dir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS), "lpbf")
+		dir.mkdirs()
+		val file = File(dir, fileName)
+		file.outputStream().use { writer(it) }
+		return file.absolutePath
+	}
+
 	fun listSavedProjects(context: android.content.Context): List<ProjectSummary> {
 		val root = projectsRoot(context)
 		if (!root.exists()) return emptyList()

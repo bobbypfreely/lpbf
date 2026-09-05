@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+	android:layout_width="match_parent"
+	android:layout_height="match_parent"
+	android:orientation="vertical"
+	android:padding="24dp">
+
+	<TextView
+		android:id="@+id/spliceStatusText"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:text="Load a track and mark some segments first."
+		android:textSize="15sp" />
+
+	<EditText
+		android:id="@+id/spliceTitleInput"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="20dp"
+		android:hint="Title"
+		android:inputType="text"
+		android:maxLines="1" />
+
+	<EditText
+		android:id="@+id/spliceProducerInput"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="12dp"
+		android:hint="Producer"
+		android:inputType="text"
+		android:maxLines="1" />
+
+	<Button
+		android:id="@+id/spliceCreateButton"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="20dp"
+		android:text="Create Unipack" />
+
+	<TextView
+		android:id="@+id/spliceResultText"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="16dp"
+		android:textSize="13sp" />
+
+</LinearLayout>

@@ -56,53 +56,31 @@
 		</LinearLayout>
 
 		<TextView
+			android:id="@+id/lightshowTimeText"
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
 			android:layout_marginTop="8dp"
-			android:text="Step:"
-			android:textSize="12sp" />
+			android:text="Time: 0ms"
+			android:textSize="13sp"
+			android:textStyle="bold" />
 
-		<LinearLayout
-			android:id="@+id/lightshowStepRow"
-			android:layout_width="match_parent"
-			android:layout_height="wrap_content"
-			android:layout_marginTop="4dp"
-			android:orientation="horizontal" />
-
-		<LinearLayout
-			android:layout_width="match_parent"
-			android:layout_height="wrap_content"
-			android:layout_marginTop="8dp"
-			android:orientation="horizontal"
-			android:gravity="center_vertical">
-
-			<TextView
-				android:layout_width="0dp"
-				android:layout_height="wrap_content"
-				android:layout_weight="1"
-				android:id="@+id/lightshowTimeText"
-				android:text="Time: 0ms"
-				android:textSize="13sp" />
-			<Button android:id="@+id/lightshowTimeMinus" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="-50" android:textSize="11sp" android:minWidth="0dp" android:paddingStart="8dp" android:paddingEnd="8dp" />
-			<Button android:id="@+id/lightshowTimePlus" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="+50" android:textSize="11sp" android:minWidth="0dp" android:paddingStart="8dp" android:paddingEnd="8dp" />
-		</LinearLayout>
-
+		<!-- Pad -> Lights -> Time: tap pads on the grid to light them at the current
+		     Time, then dial Time in with these. No duration/staging step -- a pad tap
+		     places immediately using FIXED_DURATION_MS. -->
 		<LinearLayout
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
 			android:layout_marginTop="4dp"
-			android:orientation="horizontal"
-			android:gravity="center_vertical">
+			android:orientation="horizontal">
 
-			<TextView
-				android:layout_width="0dp"
-				android:layout_height="wrap_content"
-				android:layout_weight="1"
-				android:id="@+id/lightshowDurationText"
-				android:text="Duration: 200ms"
-				android:textSize="13sp" />
-			<Button android:id="@+id/lightshowDurationMinus" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="-50" android:textSize="11sp" android:minWidth="0dp" android:paddingStart="8dp" android:paddingEnd="8dp" />
-			<Button android:id="@+id/lightshowDurationPlus" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="+50" android:textSize="11sp" android:minWidth="0dp" android:paddingStart="8dp" android:paddingEnd="8dp" />
+			<Button android:id="@+id/lightshowTimeMinus1000" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="-1000" android:textSize="9sp" android:minWidth="0dp" android:paddingStart="0dp" android:paddingEnd="0dp" />
+			<Button android:id="@+id/lightshowTimeMinus100" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="-100" android:textSize="9sp" android:minWidth="0dp" android:paddingStart="0dp" android:paddingEnd="0dp" />
+			<Button android:id="@+id/lightshowTimeMinus10" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="-10" android:textSize="9sp" android:minWidth="0dp" android:paddingStart="0dp" android:paddingEnd="0dp" />
+			<Button android:id="@+id/lightshowTimeMinus1" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="-1" android:textSize="9sp" android:minWidth="0dp" android:paddingStart="0dp" android:paddingEnd="0dp" />
+			<Button android:id="@+id/lightshowTimePlus1" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="+1" android:textSize="9sp" android:minWidth="0dp" android:paddingStart="0dp" android:paddingEnd="0dp" />
+			<Button android:id="@+id/lightshowTimePlus10" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="+10" android:textSize="9sp" android:minWidth="0dp" android:paddingStart="0dp" android:paddingEnd="0dp" />
+			<Button android:id="@+id/lightshowTimePlus100" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="+100" android:textSize="9sp" android:minWidth="0dp" android:paddingStart="0dp" android:paddingEnd="0dp" />
+			<Button android:id="@+id/lightshowTimePlus1000" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="+1000" android:textSize="9sp" android:minWidth="0dp" android:paddingStart="0dp" android:paddingEnd="0dp" />
 		</LinearLayout>
 
 		<LinearLayout

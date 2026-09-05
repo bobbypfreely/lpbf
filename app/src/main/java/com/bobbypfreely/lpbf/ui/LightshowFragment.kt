@@ -51,25 +51,25 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 	private lateinit var buttonRow: LinearLayout
 	private lateinit var editControls: LinearLayout
 	private lateinit var velocityText: TextView
-	private lateinit var stepRow: LinearLayout
 	private lateinit var timeText: TextView
-	private lateinit var durationText: TextView
-	private lateinit var timeMinus: Button
-	private lateinit var timePlus: Button
-	private lateinit var durationMinus: Button
-	private lateinit var durationPlus: Button
+	private lateinit var timeMinus1000: Button
+	private lateinit var timeMinus100: Button
+	private lateinit var timeMinus10: Button
+	private lateinit var timeMinus1: Button
+	private lateinit var timePlus1: Button
+	private lateinit var timePlus10: Button
+	private lateinit var timePlus100: Button
+	private lateinit var timePlus1000: Button
 	private lateinit var eventListContainer: LinearLayout
 	private lateinit var grid: VirtualLaunchpadGridView
 
 	private val hardwareButtons = mutableListOf<Button>()
-	private val stepButtons = mutableListOf<Button>()
 	private val previewHandler = Handler(Looper.getMainLooper())
 
-	/** Shared granularity for both Time and Duration's -/+ buttons. 50ms was the only
-	 * option originally and left no room for fine placement -- this is user-selectable
-	 * now, defaulting back to 50 since that's still the most common case. */
-	private val stepOptions = intArrayOf(10, 25, 50, 100)
-	private var stepMs = 50
+	/** Fixed duration every placed event gets. Not user-editable -- authoring is
+	 * pad-then-time only, matching how a real Launchpad performance lightshow is
+	 * built (fire pads, dial in when). Revisit if per-event length is ever needed. */
+	private val FIXED_DURATION_MS = 200
 
 	/** Built fresh against whichever DecodedAudio is current each time Play is pressed --
 	 * cheap to construct, and this avoids holding a stale reference across a project
@@ -85,7 +85,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
 	private val events = mutableListOf<EditEvent>()
 	private var authoringTimeMs = 0
-	private var authoringDurationMs = 200
 	private var loadedForSegment: Int? = null
 
 	override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -96,18 +95,19 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		buttonRow = view.findViewById(R.id.lightshowButtonRow)
 		editControls = view.findViewById(R.id.lightshowEditControls)
 		velocityText = view.findViewById(R.id.lightshowVelocityText)
-		stepRow = view.findViewById(R.id.lightshowStepRow)
 		timeText = view.findViewById(R.id.lightshowTimeText)
-		durationText = view.findViewById(R.id.lightshowDurationText)
-		timeMinus = view.findViewById(R.id.lightshowTimeMinus)
-		timePlus = view.findViewById(R.id.lightshowTimePlus)
-		durationMinus = view.findViewById(R.id.lightshowDurationMinus)
-		durationPlus = view.findViewById(R.id.lightshowDurationPlus)
+		timeMinus1000 = view.findViewById(R.id.lightshowTimeMinus1000)
+		timeMinus100 = view.findViewById(R.id.lightshowTimeMinus100)
+		timeMinus10 = view.findViewById(R.id.lightshowTimeMinus10)
+		timeMinus1 = view.findViewById(R.id.lightshowTimeMinus1)
+		timePlus1 = view.findViewById(R.id.lightshowTimePlus1)
+		timePlus10 = view.findViewById(R.id.lightshowTimePlus10)
+		timePlus100 = view.findViewById(R.id.lightshowTimePlus100)
+		timePlus1000 = view.findViewById(R.id.lightshowTimePlus1000)
 		eventListContainer = view.findViewById(R.id.lightshowEventListContainer)
 		grid = view.findViewById(R.id.lightshowGrid)
 
 		buildHardwareButtonRow()
-		buildStepRow()
 
 		// Same principle as Place: virtual grid taps and physical Launchpad presses both
 		// funnel through ProjectViewModel.onPadDown, so this fragment never has to know
@@ -117,10 +117,14 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 			override fun onPadUp(x: Int, y: Int) {}
 		}
 
-		timeMinus.setOnClickListener { adjustTime(-stepMs) }
-		timePlus.setOnClickListener { adjustTime(+stepMs) }
-		durationMinus.setOnClickListener { adjustDuration(-stepMs) }
-		durationPlus.setOnClickListener { adjustDuration(+stepMs) }
+		timeMinus1000.setOnClickListener { adjustTime(-1000) }
+		timeMinus100.setOnClickListener { adjustTime(-100) }
+		timeMinus10.setOnClickListener { adjustTime(-10) }
+		timeMinus1.setOnClickListener { adjustTime(-1) }
+		timePlus1.setOnClickListener { adjustTime(+1) }
+		timePlus10.setOnClickListener { adjustTime(+10) }
+		timePlus100.setOnClickListener { adjustTime(+100) }
+		timePlus1000.setOnClickListener { adjustTime(+1000) }
 		view.findViewById<Button>(R.id.lightshowVelocityMinus).setOnClickListener { viewModel.nudgeVelocity(-1) }
 		view.findViewById<Button>(R.id.lightshowVelocityPlus).setOnClickListener { viewModel.nudgeVelocity(+1) }
 		view.findViewById<Button>(R.id.lightshowPlay).setOnClickListener { playPreview() }
@@ -201,49 +205,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		}
 	}
 
-	// ---- Step-size selector: governs both Time and Duration's -/+ granularity ----
-
-	private fun buildStepRow() {
-		stepRow.removeAllViews()
-		stepButtons.clear()
-		stepOptions.forEachIndexed { i, step ->
-			val button = Button(requireContext()).apply {
-				text = "${step}ms"
-				textSize = 11f
-				layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-					marginEnd = if (i < stepOptions.size - 1) 4 else 0
-				}
-				setPadding(0, 8, 0, 8)
-				setOnClickListener { setStep(step) }
-			}
-			stepRow.addView(button)
-			stepButtons.add(button)
-		}
-		refreshStepHighlight()
-	}
-
-	private fun setStep(step: Int) {
-		stepMs = step
-		refreshStepHighlight()
-		timeMinus.text = "-$stepMs"
-		timePlus.text = "+$stepMs"
-		durationMinus.text = "-$stepMs"
-		durationPlus.text = "+$stepMs"
-	}
-
-	private fun refreshStepHighlight() {
-		stepButtons.forEachIndexed { i, button ->
-			val isActive = stepOptions[i] == stepMs
-			if (isActive) {
-				button.setBackgroundColor(Color.parseColor("#00ADB5"))
-				button.setTextColor(Color.parseColor("#0F0F1A"))
-			} else {
-				button.setBackgroundColor(Color.parseColor("#1A1A2E"))
-				button.setTextColor(Color.parseColor("#DDDDDD"))
-			}
-		}
-	}
-
 	private fun refreshVelocityText() {
 		velocityText.text = "Velocity: ${viewModel.currentColorVelocity()}"
 	}
@@ -266,7 +227,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 			loadedForSegment = segmentIndex
 			events.clear()
 			authoringTimeMs = 0
-			authoringDurationMs = 200
 			val session = viewModel.markingSession.value
 			val segment = session?.segment(segmentIndex)
 			val pattern = segment?.lightPattern
@@ -303,17 +263,12 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		timeText.text = "Time: ${authoringTimeMs}ms"
 	}
 
-	private fun adjustDuration(deltaMs: Int) {
-		authoringDurationMs = (authoringDurationMs + deltaMs).coerceAtLeast(10)
-		durationText.text = "Duration: ${authoringDurationMs}ms"
-	}
-
 	// ---- Placing / removing events ----
 
 	private fun placeEvent(x: Int, y: Int, velocity: Int) {
-		events.add(EditEvent(x, y, velocity, authoringTimeMs, authoringDurationMs))
+		events.add(EditEvent(x, y, velocity, authoringTimeMs, FIXED_DURATION_MS))
 		events.sortBy { it.startMs }
-		viewModel.logDebug("Lightshow: placed pad ($x,$y) vel=$velocity at ${authoringTimeMs}ms for ${authoringDurationMs}ms")
+		viewModel.logDebug("Lightshow: placed pad ($x,$y) vel=$velocity at ${authoringTimeMs}ms for ${FIXED_DURATION_MS}ms")
 		refresh()
 	}
 
@@ -452,7 +407,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 			"Editing cut ${segmentIndex + 1} (${segment.durationMs}ms)"
 		}
 		timeText.text = "Time: ${authoringTimeMs}ms"
-		durationText.text = "Duration: ${authoringDurationMs}ms"
 
 		grid.clearAllPads()
 		grid.clearAllHighlights()
