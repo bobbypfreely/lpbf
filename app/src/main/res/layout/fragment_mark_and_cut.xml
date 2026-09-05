@@ -60,7 +60,7 @@
 	</LinearLayout>
 
 	<!-- Loose-files import: pick a FOLDER (not a zip) containing info/keySound/sounds/
-	     keyLed directly -- same reader underneath, just skips the unzip step. -->
+	     keyLed directly: same reader underneath, just skips the unzip step. -->
 	<Button
 		android:id="@+id/importUnipackFolderButton"
 		android:layout_width="match_parent"
