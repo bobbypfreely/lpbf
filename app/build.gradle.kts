@@ -15,7 +15,23 @@ android {
 		versionName = "0.1.0"
 	}
 
+	// Committed debug keystore (app/lpbf-debug.keystore) so every CI run signs debug
+	// builds with the SAME certificate. Without this, AGP auto-generates a fresh
+	// ~/.android/debug.keystore on each fresh GitHub Actions runner, so every build
+	// had a different signer and Android refused to install over the previous APK.
+	signingConfigs {
+		create("debugStable") {
+			storeFile = file("lpbf-debug.keystore")
+			storePassword = "lpbfdebug"
+			keyAlias = "lpbf-debug"
+			keyPassword = "lpbfdebug"
+		}
+	}
+
 	buildTypes {
+		debug {
+			signingConfig = signingConfigs.getByName("debugStable")
+		}
 		release {
 			isMinifyEnabled = false
 		}
@@ -52,4 +68,9 @@ dependencies {
 	// battle-tested media pipeline, for the Mark and Cut screen's play/pause/seek.
 	implementation("androidx.media3:media3-exoplayer:1.4.1")
 	implementation("androidx.media3:media3-common:1.4.1")
+
+	// DocumentFile: lets us walk a user-picked folder tree (loose, unzipped Unipack --
+	// info/keySound/sounds/keyLed as plain files/folders) the same safe way we already
+	// read single files through SAF, since content:// trees aren't plain java.io.File.
+	implementation("androidx.documentfile:documentfile:1.0.1")
 }

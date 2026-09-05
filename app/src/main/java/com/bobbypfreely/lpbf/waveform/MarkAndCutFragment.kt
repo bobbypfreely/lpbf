@@ -69,6 +69,10 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		if (uri != null) importUnipack(uri)
 	}
 
+	private val pickUnipackFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+		if (uri != null) importUnipackFolder(uri)
+	}
+
 	override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
 		super.onViewCreated(view, savedInstanceState)
 
@@ -96,6 +100,9 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 		view.findViewById<Button>(R.id.importUnipackButton).setOnClickListener {
 			pickUnipack.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*"))
+		}
+		view.findViewById<Button>(R.id.importUnipackFolderButton).setOnClickListener {
+			pickUnipackFolder.launch(null)
 		}
 		view.findViewById<Button>(R.id.zoomInButton).setOnClickListener {
 			waveformView.zoomIn(); waveformView.invalidate(); refreshMarkers()
@@ -506,62 +513,118 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				val zipCopy = copyUriToUniqueCacheFile(context, uri, 0)
 				val extractDir = java.io.File(context.cacheDir, "lpbf_unipack_extract_${System.currentTimeMillis()}")
 				com.bobbypfreely.lpbf.unipack.UnipackReader.extractZip(zipCopy, extractDir)
-				val read = com.bobbypfreely.lpbf.unipack.UnipackReader.read(extractDir)
-
-				val occurrenceCount = mutableMapOf<com.bobbypfreely.lpbf.marking.ButtonRef, Int>()
-				val sources = read.entries.map { entry ->
-					val soundFile = java.io.File(read.soundsDir, entry.soundRelativePath)
-					val occurrence = occurrenceCount.getOrDefault(entry.button, 0)
-					occurrenceCount[entry.button] = occurrence + 1
-
-					val rawLedEvents = read.keyLedDir?.let { dir ->
-						com.bobbypfreely.lpbf.lightshow.KeyLedReader.findFile(
-							dir, entry.button.chain, entry.button.x, entry.button.y, occurrence
-						)?.let { file ->
-							try {
-								com.bobbypfreely.lpbf.lightshow.KeyLedReader.parse(file)
-							} catch (e: Exception) {
-								android.util.Log.w("MarkAndCutFragment", "Couldn't parse keyLED file ${file.name}", e)
-								null
-							}
-						}
-					}
-
-					com.bobbypfreely.lpbf.audio.ImportClipSource(
-						filePath = soundFile.absolutePath,
-						button = entry.button,
-						rawLedEvents = rawLedEvents,
-					)
-				}
-				if (sources.isEmpty()) {
-					activity?.runOnUiThread { statusText.text = "Unipack has no sounds mapped -- nothing to import." }
-					return@thread
-				}
-
-				val result = com.bobbypfreely.lpbf.audio.MultiClipImporter.buildConcatenatedImport(sources, context.cacheDir)
-				activity?.runOnUiThread {
-					viewModel.applyMultiClipImport(result)
-					val summary = StringBuilder("Imported Unipack '${read.info.title}' -- ${result.buttons.size} cut(s).")
-					val lightshowCount = result.patterns.count { it != null }
-					if (lightshowCount > 0) {
-						summary.append(" $lightshowCount with an existing lightshow.")
-					} else if (read.keyLedDir == null) {
-						summary.append(" No keyLed folder in this pack -- nothing to import there.")
-					}
-					if (read.info.chainCount > 8) {
-						summary.append(" Note: this pack uses ${read.info.chainCount} chains; Place only exposes chains 1-8 for editing right now.")
-					}
-					if (result.skipped.isNotEmpty()) {
-						summary.append(" Skipped ${result.skipped.size}: ${result.skipped.joinToString("; ")}")
-					}
-					if (read.warnings.isNotEmpty()) {
-						summary.append(" Warnings: ${read.warnings.joinToString("; ")}")
-					}
-					statusText.text = summary.toString()
-				}
+				importFromExtractedDir(context, extractDir)
 			} catch (e: Exception) {
 				android.util.Log.e("MarkAndCutFragment", "Unipack import failed", e)
 				activity?.runOnUiThread { statusText.text = "Unipack import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
+			}
+		}
+	}
+
+	/** Loose-files import: user picks a FOLDER (not a zip) containing info/keySound/
+	 * sounds/keyLed directly -- e.g. a Unipack someone already unzipped, or one being
+	 * hand-assembled. UnipackReader.read() already works on a plain folder either way,
+	 * so this just needs to get that folder's contents onto local disk first, since a
+	 * SAF tree Uri isn't a java.io.File and can't be read the same way. */
+	private fun importUnipackFolder(treeUri: Uri) {
+		val context = requireContext().applicationContext
+		statusText.text = "Importing Unipack folder\u2026"
+		thread(name = "lpbf-import-unipack-folder") {
+			try {
+				val extractDir = copyDocumentTreeToCache(context, treeUri)
+				importFromExtractedDir(context, extractDir)
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "Unipack folder import failed", e)
+				activity?.runOnUiThread { statusText.text = "Unipack folder import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
+			}
+		}
+	}
+
+	/** Shared by both import paths above once the pack's files are sitting on local
+	 * disk under [extractDir] -- whether that came from unzipping or from copying a
+	 * picked folder makes no difference from here on. Runs on a background thread;
+	 * only touches the UI via runOnUiThread. */
+	private fun importFromExtractedDir(context: android.content.Context, extractDir: java.io.File) {
+		val read = com.bobbypfreely.lpbf.unipack.UnipackReader.read(extractDir)
+
+		val occurrenceCount = mutableMapOf<com.bobbypfreely.lpbf.marking.ButtonRef, Int>()
+		val sources = read.entries.map { entry ->
+			val soundFile = java.io.File(read.soundsDir, entry.soundRelativePath)
+			val occurrence = occurrenceCount.getOrDefault(entry.button, 0)
+			occurrenceCount[entry.button] = occurrence + 1
+
+			val rawLedEvents = read.keyLedDir?.let { dir ->
+				com.bobbypfreely.lpbf.lightshow.KeyLedReader.findFile(
+					dir, entry.button.chain, entry.button.x, entry.button.y, occurrence
+				)?.let { file ->
+					try {
+						com.bobbypfreely.lpbf.lightshow.KeyLedReader.parse(file)
+					} catch (e: Exception) {
+						android.util.Log.w("MarkAndCutFragment", "Couldn't parse keyLED file ${file.name}", e)
+						null
+					}
+				}
+			}
+
+			com.bobbypfreely.lpbf.audio.ImportClipSource(
+				filePath = soundFile.absolutePath,
+				button = entry.button,
+				rawLedEvents = rawLedEvents,
+			)
+		}
+		if (sources.isEmpty()) {
+			activity?.runOnUiThread { statusText.text = "Unipack has no sounds mapped -- nothing to import." }
+			return
+		}
+
+		val result = com.bobbypfreely.lpbf.audio.MultiClipImporter.buildConcatenatedImport(sources, context.cacheDir)
+		activity?.runOnUiThread {
+			viewModel.applyMultiClipImport(result)
+			val summary = StringBuilder("Imported Unipack '${read.info.title}' -- ${result.buttons.size} cut(s).")
+			val lightshowCount = result.patterns.count { it != null }
+			if (lightshowCount > 0) {
+				summary.append(" $lightshowCount with an existing lightshow.")
+			} else if (read.keyLedDir == null) {
+				summary.append(" No keyLed folder in this pack -- nothing to import there.")
+			}
+			if (read.info.chainCount > 8) {
+				summary.append(" Note: this pack uses ${read.info.chainCount} chains; Place only exposes chains 1-8 for editing right now.")
+			}
+			if (result.skipped.isNotEmpty()) {
+				summary.append(" Skipped ${result.skipped.size}: ${result.skipped.joinToString("; ")}")
+			}
+			if (read.warnings.isNotEmpty()) {
+				summary.append(" Warnings: ${read.warnings.joinToString("; ")}")
+			}
+			statusText.text = summary.toString()
+		}
+	}
+
+	/** Copies a SAF-picked folder tree (content:// -- info/keySound/sounds/keyLed as
+	 * loose files, possibly nested one level like a zip sometimes is) into a real
+	 * cache folder on disk, mirroring extractZip()'s output layout exactly so
+	 * UnipackReader.read() can't tell the difference. */
+	private fun copyDocumentTreeToCache(context: android.content.Context, treeUri: Uri): java.io.File {
+		val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
+			?: error("Could not open the selected folder")
+		val targetDir = java.io.File(context.cacheDir, "lpbf_unipack_folder_${System.currentTimeMillis()}")
+		targetDir.mkdirs()
+		copyDocumentFileTree(context, root, targetDir)
+		return targetDir
+	}
+
+	private fun copyDocumentFileTree(context: android.content.Context, doc: androidx.documentfile.provider.DocumentFile, targetDir: java.io.File) {
+		doc.listFiles().forEach { child ->
+			val name = child.name ?: return@forEach
+			if (child.isDirectory) {
+				val childDir = java.io.File(targetDir, name)
+				childDir.mkdirs()
+				copyDocumentFileTree(context, child, childDir)
+			} else {
+				val outFile = java.io.File(targetDir, name)
+				context.contentResolver.openInputStream(child.uri)?.use { input ->
+					outFile.outputStream().use { output -> input.copyTo(output) }
+				}
 			}
 		}
 	}
