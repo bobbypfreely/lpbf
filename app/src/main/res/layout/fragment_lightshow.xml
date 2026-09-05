@@ -65,7 +65,7 @@
 			android:textStyle="bold" />
 
 		<!-- Pad -> Lights -> Time: tap pads on the grid to light them at the current
-		     Time, then dial Time in with these. No duration/staging step -- a pad tap
+		     Time, then dial Time in with these. No duration/staging step: a pad tap
 		     places immediately using FIXED_DURATION_MS. -->
 		<LinearLayout
 			android:layout_width="match_parent"
