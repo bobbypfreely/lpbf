@@ -95,22 +95,30 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 		val cellH = height.toFloat() / gridHeight
 		val litPaint = Paint().apply { isAntiAlias = true }
 
-		for (gx in 0 until gridWidth) {
-			for (gy in 0 until gridHeight) {
-				val left = gx * cellW + gapPx / 2
-				val top = gy * cellH + gapPx / 2
-				val right = (gx + 1) * cellW - gapPx / 2
-				val bottom = (gy + 1) * cellH - gapPx / 2
+		// Logical (x,y) follows the real hardware/file convention (confirmed against
+		// the MIDI drivers and real Unipacks): x is the ROW, top(0) to bottom; y is
+		// the COLUMN, left(0) to right. That's transposed from normal screen (col,row)
+		// thinking, so this view swaps x/y when converting to/from screen position.
+		// Do not "simplify" this away -- removing it is what previously made pads
+		// render mirrored across the diagonal versus the real hardware and real packs.
+		for (lx in 0 until gridHeight) {
+			for (ly in 0 until gridWidth) {
+				val screenCol = ly
+				val screenRow = lx
+				val left = screenCol * cellW + gapPx / 2
+				val top = screenRow * cellH + gapPx / 2
+				val right = (screenCol + 1) * cellW - gapPx / 2
+				val bottom = (screenRow + 1) * cellH - gapPx / 2
 				val rect = RectF(left, top, right, bottom)
 
 				val paint = when {
-					pressedCell == gx to gy -> cellPaintPressed
-					litPads.containsKey(gx to gy) -> litPaint.apply { color = litPads[gx to gy]!! }
+					pressedCell == lx to ly -> cellPaintPressed
+					litPads.containsKey(lx to ly) -> litPaint.apply { color = litPads[lx to ly]!! }
 					else -> cellPaintOff
 				}
 				canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
 
-				val highlightColor = highlightedPads[gx to gy]
+				val highlightColor = highlightedPads[lx to ly]
 				if (highlightColor != null) {
 					highlightPaint.color = highlightColor
 					val inset = highlightPaint.strokeWidth / 2
@@ -118,7 +126,7 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 					canvas.drawRoundRect(hRect, cornerRadius, cornerRadius, highlightPaint)
 				}
 
-				val label = padLabels[gx to gy]
+				val label = padLabels[lx to ly]
 				if (label != null) {
 					labelPaint.textSize = cellH * 0.4f
 					val textY = rect.centerY() - (labelPaint.descent() + labelPaint.ascent()) / 2
@@ -131,14 +139,17 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 	override fun onTouchEvent(event: MotionEvent): Boolean {
 		val cellW = width.toFloat() / gridWidth
 		val cellH = height.toFloat() / gridHeight
-		val gx = (event.x / cellW).toInt().coerceIn(0, gridWidth - 1)
-		val gy = (event.y / cellH).toInt().coerceIn(0, gridHeight - 1)
+		val screenCol = (event.x / cellW).toInt().coerceIn(0, gridWidth - 1)
+		val screenRow = (event.y / cellH).toInt().coerceIn(0, gridHeight - 1)
+		// Swap back to logical (x=row, y=col) -- see onDraw's note above.
+		val lx = screenRow
+		val ly = screenCol
 
 		when (event.action) {
 			MotionEvent.ACTION_DOWN -> {
-				pressedCell = gx to gy
+				pressedCell = lx to ly
 				invalidate()
-				listener?.onPadDown(gx, gy)
+				listener?.onPadDown(lx, ly)
 			}
 			MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
 				val cell = pressedCell
