@@ -23,6 +23,7 @@ data class UnipackReadResult(
 	val entries: List<UnipackKeySoundEntry>,
 	val soundsDir: File,
 	val keyLedDir: File?,
+	val autoPlay: List<AutoPlayPress>,
 	val warnings: List<String>,
 )
 
@@ -86,6 +87,7 @@ object UnipackReader {
 		val soundsDir = actualRoot.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("sounds", ignoreCase = true) }
 			?: throw IllegalArgumentException("Not a Unipack -- 'sounds' folder missing")
 		val keyLedDir = actualRoot.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("keyLed", ignoreCase = true) }
+		val autoPlayFile = actualRoot.listFiles()?.firstOrNull { it.isFile && it.name.equals("autoPlay", ignoreCase = true) }
 
 		var title = ""
 		var producerName = ""
@@ -142,11 +144,19 @@ object UnipackReader {
 			}
 		}
 
+		val autoPlay = try {
+			autoPlayFile?.let { AutoPlayReader.read(it) } ?: emptyList()
+		} catch (e: Exception) {
+			warnings.add("autoPlay: couldn't be parsed (${e.message}) -- falling back to keySound file order")
+			emptyList()
+		}
+
 		return UnipackReadResult(
 			info = UnipackInfo(title, producerName, buttonX, buttonY, chainCount, squareButton, website),
 			entries = entries,
 			soundsDir = soundsDir,
 			keyLedDir = keyLedDir,
+			autoPlay = autoPlay,
 			warnings = warnings,
 		)
 	}
