@@ -19,7 +19,12 @@ class LedAnimation(
 
 	sealed interface LedEvent {
 		class On(
-			val x: Int,       // -1 means "mc" (round/chain-wide LED)
+			val x: Int,       // -1 means "mc" (round/chain-wide LED); -1,-1 together means
+			                  // the single fixed "l" (scene-launch) button -- see KeyLedReader/
+			                  // KeyLedWriter. Only the plain -1-for-mc case is confirmed
+			                  // against the real struct; the -1,-1 "l" convention is LPBF's
+			                  // own extension, inferred from real keyLED files, not confirmed
+			                  // against the original source.
 			val y: Int,
 			val color: Int = -1,
 			val velocity: Int = DEFAULT_VELOCITY,

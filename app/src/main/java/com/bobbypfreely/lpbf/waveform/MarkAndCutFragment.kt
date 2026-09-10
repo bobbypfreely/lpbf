@@ -689,7 +689,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		val read = com.bobbypfreely.lpbf.unipack.UnipackReader.read(extractDir)
 
 		val occurrenceCount = mutableMapOf<com.bobbypfreely.lpbf.marking.ButtonRef, Int>()
-		var mcOnlyDroppedCount = 0
+		var unparseableKeyLedCount = 0
 		val sources = read.entries.map { entry ->
 			val soundFile = java.io.File(read.soundsDir, entry.soundRelativePath)
 			val occurrence = occurrenceCount.getOrDefault(entry.button, 0)
@@ -701,12 +701,11 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				)?.let { file ->
 					try {
 						val parsed = com.bobbypfreely.lpbf.lightshow.KeyLedReader.parse(file)
-						// A keyLED file that exists but parses to zero grid events isn't
-						// corrupt -- it's real content LPBF doesn't model yet, almost
-						// always an "mc" (side/scene-launch button) animation rather
-						// than anything on the 8x8 grid. Surface it instead of silently
-						// dropping it so this doesn't look like random data loss.
-						if (parsed.isEmpty() && file.length() > 0) mcOnlyDroppedCount++
+						// KeyLedReader now captures "mc"/"l" (side/scene-launch button)
+						// content too, so an existing-but-empty parse means something
+						// genuinely unrecognized was in the file -- still worth surfacing
+						// rather than looking like silent data loss.
+						if (parsed.isEmpty() && file.length() > 0) unparseableKeyLedCount++
 						parsed
 					} catch (e: Exception) {
 						android.util.Log.w("MarkAndCutFragment", "Couldn't parse keyLED file ${file.name}", e)
@@ -736,8 +735,8 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			} else if (read.keyLedDir == null) {
 				summary.append(" No keyLed folder in this pack -- nothing to import there.")
 			}
-			if (mcOnlyDroppedCount > 0) {
-				summary.append(" $mcOnlyDroppedCount keyLED file(s) were side-button (mc) animations LPBF doesn't support yet -- not imported.")
+			if (unparseableKeyLedCount > 0) {
+				summary.append(" $unparseableKeyLedCount keyLED file(s) had content LPBF couldn't parse -- not imported.")
 			}
 			if (read.info.chainCount > 8) {
 				summary.append(" Note: this pack uses ${read.info.chainCount} chains; Place only exposes chains 1-8 for editing right now.")

@@ -21,20 +21,34 @@ object KeyLedWriter {
 		for (event in events) {
 			when (event) {
 				is LedAnimation.LedEvent.On -> {
-					val target = if (event.x == -1) "mc" else (event.x + 1).toString()
-					if (event.color >= 0) {
-						sb.append("o ").append(target).append(' ').append(event.y + 1)
-							.append(' ').append(Integer.toHexString(event.color))
-							.append(' ').append(event.velocity).append('\n')
+					if (event.x == -1 && event.y == -1) {
+						// The single fixed scene-launch button -- no column of its own.
+						if (event.color >= 0) {
+							sb.append("o l ").append(Integer.toHexString(event.color))
+								.append(' ').append(event.velocity).append('\n')
+						} else {
+							sb.append("o l a ").append(event.velocity).append('\n')
+						}
 					} else {
-						sb.append("o ").append(target).append(' ').append(event.y + 1)
-							.append(" a ").append(event.velocity).append('\n')
+						val target = if (event.x == -1) "mc" else (event.x + 1).toString()
+						if (event.color >= 0) {
+							sb.append("o ").append(target).append(' ').append(event.y + 1)
+								.append(' ').append(Integer.toHexString(event.color))
+								.append(' ').append(event.velocity).append('\n')
+						} else {
+							sb.append("o ").append(target).append(' ').append(event.y + 1)
+								.append(" a ").append(event.velocity).append('\n')
+						}
 					}
 				}
 
 				is LedAnimation.LedEvent.Off -> {
-					val target = if (event.x == -1) "mc" else (event.x + 1).toString()
-					sb.append("f ").append(target).append(' ').append(event.y + 1).append('\n')
+					if (event.x == -1 && event.y == -1) {
+						sb.append("f l\n")
+					} else {
+						val target = if (event.x == -1) "mc" else (event.x + 1).toString()
+						sb.append("f ").append(target).append(' ').append(event.y + 1).append('\n')
+					}
 				}
 
 				is LedAnimation.LedEvent.Delay -> {

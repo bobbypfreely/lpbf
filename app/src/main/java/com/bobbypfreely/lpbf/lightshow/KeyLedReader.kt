@@ -44,7 +44,14 @@ object KeyLedReader {
 
 	/** Parses one keyLED file's raw text into a flat, time-ordered event list. Malformed
 	 * or unrecognized lines are skipped rather than throwing -- a partially-garbled file
-	 * should still import whatever it can, same spirit as UnipackReader's own warnings. */
+	 * should still import whatever it can, same spirit as UnipackReader's own warnings.
+	 *
+	 * "mc" (round/chain-wide LED, one per column) and "l" (the single fixed scene-launch
+	 * button, no column of its own) both get x=-1 -- "mc" keeps its real column as y,
+	 * "l" gets y=-1 too since it has no column. Matches LedAnimation's existing x=-1
+	 * convention (ported from the real struct) so this content survives the full
+	 * parse -> Pattern -> PatternCompiler -> KeyLedWriter round trip instead of getting
+	 * silently dropped, even though the grid UI can't show/edit it yet. */
 	fun parse(file: File): List<TimedEvent> {
 		var t = 0
 		val events = mutableListOf<TimedEvent>()
@@ -54,21 +61,51 @@ object KeyLedReader {
 			val tok = line.split(Regex("\\s+"))
 			when (tok[0]) {
 				"o", "on" -> {
-					if (tok.size < 5) return@forEach
-					val x = tok[1].toIntOrNull()?.minus(1) ?: return@forEach
-					val y = tok[2].toIntOrNull()?.minus(1) ?: return@forEach
-					// tok[3] is the color code -- every real file seen uses "a" (auto/
-					// palette). A literal hex color could theoretically appear here per
-					// the format spec, but none observed in practice does; treat it the
-					// same as "a" and read tok[4] as the velocity either way.
-					val velocity = tok[4].toIntOrNull() ?: return@forEach
-					events.add(TimedEvent(t, x, y, on = true, velocity = velocity.coerceIn(0, 127)))
+					if (tok.size < 2) return@forEach
+					when (tok[1]) {
+						"l" -> {
+							// "o l <color> <velocity>" -- no column token.
+							if (tok.size < 4) return@forEach
+							val velocity = tok[3].toIntOrNull() ?: return@forEach
+							events.add(TimedEvent(t, -1, -1, on = true, velocity = velocity.coerceIn(0, 127)))
+						}
+						"mc" -> {
+							// "o mc <col> <color> <velocity>" -- same shape as a normal
+							// x/y line, just with "mc" standing in for x.
+							if (tok.size < 5) return@forEach
+							val y = tok[2].toIntOrNull()?.minus(1) ?: return@forEach
+							val velocity = tok[4].toIntOrNull() ?: return@forEach
+							events.add(TimedEvent(t, -1, y, on = true, velocity = velocity.coerceIn(0, 127)))
+						}
+						else -> {
+							if (tok.size < 5) return@forEach
+							val x = tok[1].toIntOrNull()?.minus(1) ?: return@forEach
+							val y = tok[2].toIntOrNull()?.minus(1) ?: return@forEach
+							// tok[3] is the color code -- every real file seen uses "a"
+							// (auto/palette). A literal hex color could theoretically
+							// appear here per the format spec, but none observed in
+							// practice does; treat it the same as "a" either way.
+							val velocity = tok[4].toIntOrNull() ?: return@forEach
+							events.add(TimedEvent(t, x, y, on = true, velocity = velocity.coerceIn(0, 127)))
+						}
+					}
 				}
 				"f", "off" -> {
-					if (tok.size < 3) return@forEach
-					val x = tok[1].toIntOrNull()?.minus(1) ?: return@forEach
-					val y = tok[2].toIntOrNull()?.minus(1) ?: return@forEach
-					events.add(TimedEvent(t, x, y, on = false, velocity = 0))
+					if (tok.size < 2) return@forEach
+					when (tok[1]) {
+						"l" -> events.add(TimedEvent(t, -1, -1, on = false, velocity = 0))
+						"mc" -> {
+							if (tok.size < 3) return@forEach
+							val y = tok[2].toIntOrNull()?.minus(1) ?: return@forEach
+							events.add(TimedEvent(t, -1, y, on = false, velocity = 0))
+						}
+						else -> {
+							if (tok.size < 3) return@forEach
+							val x = tok[1].toIntOrNull()?.minus(1) ?: return@forEach
+							val y = tok[2].toIntOrNull()?.minus(1) ?: return@forEach
+							events.add(TimedEvent(t, x, y, on = false, velocity = 0))
+						}
+					}
 				}
 				"d", "delay" -> {
 					val ms = tok.getOrNull(1)?.toIntOrNull() ?: return@forEach

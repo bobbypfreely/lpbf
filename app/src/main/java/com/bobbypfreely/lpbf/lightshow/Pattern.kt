@@ -4,7 +4,9 @@ package com.bobbypfreely.lpbf.lightshow
  * A single lighting event within a Pattern, authored independent of real-world duration.
  *
  * @param t         Time as a fraction of the pattern's total duration, 0.0 (start) to 1.0 (end).
- * @param x         0-indexed pad column. Use -1 to target the round/chain-wide "mc" LED.
+ * @param x         0-indexed pad column. Use -1 to target the round/chain-wide "mc" LED
+ *                  (with y as its real column), or -1 together with y=-1 for the single
+ *                  fixed "l" (scene-launch) button.
  * @param y         0-indexed pad row.
  * @param on        true = pad turns on at this time, false = pad turns off.
  * @param velocity  1-127 brightness/palette index. Only meaningful when [on] is true.
