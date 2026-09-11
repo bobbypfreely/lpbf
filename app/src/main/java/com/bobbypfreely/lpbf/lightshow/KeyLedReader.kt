@@ -19,8 +19,10 @@ object KeyLedReader {
 
 	/** One on/off event at an absolute millisecond offset from the start of this
 	 * particular keyLED file's own timeline (i.e. relative to whichever single button
-	 * press triggers it -- not the whole track). */
-	data class TimedEvent(val atMs: Int, val x: Int, val y: Int, val on: Boolean, val velocity: Int)
+	 * press triggers it -- not the whole track). [color] is the literal ARGB value when
+	 * the file specified one explicitly; null means "use the palette color for
+	 * [velocity]" (the "a"/"auto" form, which is what almost every real file uses). */
+	data class TimedEvent(val atMs: Int, val x: Int, val y: Int, val on: Boolean, val velocity: Int, val color: Int? = null)
 
 	/**
 	 * Finds the Nth keyLED file mapped to (chain,x,y), where N is [occurrenceIndex] --
@@ -38,7 +40,7 @@ object KeyLedReader {
 			if (!f.isFile) return@listFiles false
 			val tokens = f.name.trim().split(Regex("\\s+"))
 			tokens.size >= 3 && tokens[0] == wantChain && tokens[1] == wantX && tokens[2] == wantY
-		}?.sortedBy { it.name } ?: return null
+		}?.sortedBy { it.name.lowercase() } ?: return null
 		return candidates.getOrNull(occurrenceIndex)
 	}
 
@@ -46,12 +48,24 @@ object KeyLedReader {
 	 * or unrecognized lines are skipped rather than throwing -- a partially-garbled file
 	 * should still import whatever it can, same spirit as UnipackReader's own warnings.
 	 *
-	 * "mc" (round/chain-wide LED, one per column) and "l" (the single fixed scene-launch
-	 * button, no column of its own) both get x=-1 -- "mc" keeps its real column as y,
-	 * "l" gets y=-1 too since it has no column. Matches LedAnimation's existing x=-1
-	 * convention (ported from the real struct) so this content survives the full
-	 * parse -> Pattern -> PatternCompiler -> KeyLedWriter round trip instead of getting
-	 * silently dropped, even though the grid UI can't show/edit it yet. */
+	 * Rebuilt directly against the real parser (kimjisub/unipad-android,
+	 * UniPackFolder.kt's keyLed() function) rather than inference, confirmed
+	 * against Bobby's own copy of that source on 2026-09-10. Real formats:
+	 *   o <x|mc|*> <y> <hexColor>              -- explicit color, default velocity (4)
+	 *   o <x|mc|*> <y> a <velocity>             -- palette color (the common case)
+	 *   o <x|mc|*> <y> <hexColor> <velocity>    -- explicit color AND velocity together
+	 *   f <x|mc|*> <y>                          -- off
+	 *   d <ms>                                  -- delay
+	 * "mc" and "*" are both real synonyms for the round/chain-wide LED (x=-1, y=column).
+	 * "l" (the single fixed scene-launch button) is NOT supported by the real app either
+	 * -- its own parser hits this case and skips it, same as ours used to. LPBF still
+	 * captures it as x=-1,y=-1 rather than dropping it -- that's purely our own
+	 * extension since it's harmless to keep, not a confirmed real behavior.
+	 * "chain"/"c" mid-file (a real, supported format for embedding a chain-jump inside
+	 * a single button's own animation) is intentionally NOT preserved yet -- LPBF's
+	 * Pattern/Keyframe model has no slot for an embedded chain-jump event, only on/off.
+	 * Safe to skip: falls through the `when` as a no-op, same as any other unknown line.
+	 */
 	fun parse(file: File): List<TimedEvent> {
 		var t = 0
 		val events = mutableListOf<TimedEvent>()
@@ -62,31 +76,44 @@ object KeyLedReader {
 			when (tok[0]) {
 				"o", "on" -> {
 					if (tok.size < 2) return@forEach
-					when (tok[1]) {
+					val (x, y, colorTokenIndex) = when (tok[1]) {
 						"l" -> {
-							// "o l <color> <velocity>" -- no column token.
-							if (tok.size < 4) return@forEach
-							val velocity = tok[3].toIntOrNull() ?: return@forEach
-							events.add(TimedEvent(t, -1, -1, on = true, velocity = velocity.coerceIn(0, 127)))
+							// No column of its own -- see doc comment above.
+							if (tok.size < 3) return@forEach
+							Triple(-1, -1, 2)
 						}
-						"mc" -> {
-							// "o mc <col> <color> <velocity>" -- same shape as a normal
-							// x/y line, just with "mc" standing in for x.
-							if (tok.size < 5) return@forEach
+						"mc", "*" -> {
+							if (tok.size < 3) return@forEach
 							val y = tok[2].toIntOrNull()?.minus(1) ?: return@forEach
-							val velocity = tok[4].toIntOrNull() ?: return@forEach
-							events.add(TimedEvent(t, -1, y, on = true, velocity = velocity.coerceIn(0, 127)))
+							Triple(-1, y, 3)
 						}
 						else -> {
-							if (tok.size < 5) return@forEach
+							if (tok.size < 3) return@forEach
 							val x = tok[1].toIntOrNull()?.minus(1) ?: return@forEach
 							val y = tok[2].toIntOrNull()?.minus(1) ?: return@forEach
-							// tok[3] is the color code -- every real file seen uses "a"
-							// (auto/palette). A literal hex color could theoretically
-							// appear here per the format spec, but none observed in
-							// practice does; treat it the same as "a" either way.
-							val velocity = tok[4].toIntOrNull() ?: return@forEach
-							events.add(TimedEvent(t, x, y, on = true, velocity = velocity.coerceIn(0, 127)))
+							Triple(x, y, 3)
+						}
+					}
+					// From here, colorTokenIndex points at where the color/auto token
+					// would start; how many tokens remain after it decides the format.
+					val remaining = tok.size - colorTokenIndex
+					when {
+						remaining <= 0 -> return@forEach
+						remaining == 1 -> {
+							// "o <target> <hexColor>" -- explicit color, default velocity.
+							val color = tok[colorTokenIndex].toIntOrNull(16) ?: return@forEach
+							events.add(TimedEvent(t, x, y, on = true, velocity = LedAnimation.DEFAULT_VELOCITY, color = color or -0x1000000))
+						}
+						tok[colorTokenIndex] == "a" || tok[colorTokenIndex] == "auto" -> {
+							// "o <target> a <velocity>" -- palette color, the common case.
+							val velocity = tok.getOrNull(colorTokenIndex + 1)?.toIntOrNull() ?: return@forEach
+							events.add(TimedEvent(t, x, y, on = true, velocity = velocity.coerceIn(0, 127), color = null))
+						}
+						else -> {
+							// "o <target> <hexColor> <velocity>" -- both explicit.
+							val color = tok[colorTokenIndex].toIntOrNull(16) ?: return@forEach
+							val velocity = tok.getOrNull(colorTokenIndex + 1)?.toIntOrNull() ?: return@forEach
+							events.add(TimedEvent(t, x, y, on = true, velocity = velocity.coerceIn(0, 127), color = color or -0x1000000))
 						}
 					}
 				}
@@ -94,7 +121,7 @@ object KeyLedReader {
 					if (tok.size < 2) return@forEach
 					when (tok[1]) {
 						"l" -> events.add(TimedEvent(t, -1, -1, on = false, velocity = 0))
-						"mc" -> {
+						"mc", "*" -> {
 							if (tok.size < 3) return@forEach
 							val y = tok[2].toIntOrNull()?.minus(1) ?: return@forEach
 							events.add(TimedEvent(t, -1, y, on = false, velocity = 0))
@@ -111,8 +138,8 @@ object KeyLedReader {
 					val ms = tok.getOrNull(1)?.toIntOrNull() ?: return@forEach
 					t += ms
 				}
-				// "chain" (autoPlay-only) and anything else: not part of a single
-				// button's keyLED file, safe to ignore here.
+				// "chain"/"c" mid-file, and anything else: not modeled yet -- see doc
+				// comment above. Falling through here is a safe no-op.
 			}
 		}
 		return events
@@ -126,7 +153,7 @@ object KeyLedReader {
 		if (events.isEmpty() || durationMs <= 0) return null
 		val keyframes = events.map { e ->
 			val t = (e.atMs.toFloat() / durationMs).coerceIn(0f, 1f)
-			Keyframe(t = t, x = e.x, y = e.y, on = e.on, velocity = if (e.on) e.velocity.coerceIn(1, 127) else 1)
+			Keyframe(t = t, x = e.x, y = e.y, on = e.on, velocity = if (e.on) e.velocity.coerceIn(1, 127) else 1, color = e.color)
 		}
 		return Pattern(name, keyframes)
 	}
