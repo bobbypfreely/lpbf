@@ -89,6 +89,7 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 		viewModel.previewRequest.observe(viewLifecycleOwner) { request ->
 			if (request != null) {
 				playPreview(request.startMs, request.endMs)
+				playLightshowLive(request.pattern, request.endMs - request.startMs)
 				viewModel.clearPreviewRequest()
 			}
 		}
@@ -167,6 +168,34 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 			controller.release()
 			if (previewController === controller) previewController = null
 		}, durationMs)
+	}
+
+	/** The real "play with music and lightshow" piece: schedules this cut's Pattern
+	 * keyframes as real Handler events against the grid, timed against the cut's own
+	 * real duration -- same clock playPreview() uses for the audio, so both actually
+	 * play together instead of just both starting at roughly the same moment. */
+	private fun playLightshowLive(pattern: com.bobbypfreely.lpbf.lightshow.Pattern?, durationMs: Int) {
+		if (pattern == null || durationMs <= 0) return
+		pattern.keyframes.forEach { kf ->
+			if (kf.x < 0 || kf.y < 0) return@forEach // mc/l -- not on the visible grid
+			val delayMs = (kf.t * durationMs).toLong().coerceAtLeast(0)
+			previewStopHandler.postDelayed({
+				if (kf.on) {
+					val color = kf.color ?: velocityToColor(kf.velocity)
+					grid.setPadLit(kf.x, kf.y, color)
+				} else {
+					grid.clearPad(kf.x, kf.y)
+				}
+			}, delayMs)
+		}
+	}
+
+	/** Rough palette approximation for a raw velocity when no explicit color was given
+	 * -- good enough for a live preview, not a claim to match the real Launchpad
+	 * palette exactly. */
+	private fun velocityToColor(velocity: Int): Int {
+		val hue = (velocity.coerceIn(0, 127) / 127f) * 300f
+		return Color.HSVToColor(floatArrayOf(hue, 0.85f, 1f))
 	}
 
 	// ---- Segment list + grid rendering ----

@@ -145,7 +145,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 
 	/** One-shot event: PlaceFragment observes this and actually plays the range, then
 	 * clears it back to null so rotation/re-observe doesn't replay it. */
-	data class PreviewRequest(val startMs: Int, val endMs: Int)
+	data class PreviewRequest(val startMs: Int, val endMs: Int, val pattern: Pattern? = null, val x: Int = -1, val y: Int = -1)
 	private val _previewRequest = MutableLiveData<PreviewRequest?>(null)
 	val previewRequest: LiveData<PreviewRequest?> = _previewRequest
 
@@ -232,7 +232,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		notifySegmentsChanged()
 		val seg = session.segment(nextIndex)
 		logDebug("Assigned + previewing cut ${nextIndex + 1} -> chain $chain pad ($x,$y)")
-		_previewRequest.value = PreviewRequest(seg.startMs, seg.endMs)
+		_previewRequest.value = PreviewRequest(seg.startMs, seg.endMs, seg.lightPattern, x, y)
 	}
 
 	/** Finds every cut mapped to [x],[y] on the current chain and previews the next one in
@@ -251,7 +251,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		previewCycleIndex[button] = cycle + 1
 		val (segIndex, seg) = matches[cycle]
 		logDebug("Preview pad ($x,$y): cut ${segIndex + 1} (${seg.startMs}-${seg.endMs}ms)")
-		_previewRequest.value = PreviewRequest(seg.startMs, seg.endMs)
+		_previewRequest.value = PreviewRequest(seg.startMs, seg.endMs, seg.lightPattern, x, y)
 	}
 
 	// ---- Lightshow: mirrors Place's "select a mapped pad" interaction, but for editing
