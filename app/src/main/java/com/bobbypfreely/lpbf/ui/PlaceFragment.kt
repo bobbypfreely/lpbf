@@ -269,7 +269,7 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 			}
 		}
 		firstIndexByPad.forEach { (pad, index) ->
-			grid.setPadLit(pad.first, pad.second, litColor, null)
+			grid.setPadLit(pad.first, pad.second, litColor, (index + 1).toString())
 		}
 	}
 
