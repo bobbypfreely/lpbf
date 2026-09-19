@@ -1,25 +1,41 @@
 package com.bobbypfreely.lpbf
 
 import android.os.Bundle
+import android.view.View
+import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
-import androidx.viewpager2.widget.ViewPager2
 import com.bobbypfreely.lpbf.midi.MidiConnection
 import com.bobbypfreely.lpbf.ui.MidiControllerBridge
-import com.bobbypfreely.lpbf.ui.ProjectPagerAdapter
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
-import com.google.android.material.tabs.TabLayout
-import com.google.android.material.tabs.TabLayoutMediator
 
+/**
+ * Non-functional UI shell – Launchpad’s Best Friend
+ * Center  = big Launchpad grid
+ * Left    = KeyLED drawer
+ * Right   = KeySound drawer
+ * Bottom  = Waveform drawer
+ *
+ * All existing libraries kept. Real wiring comes later.
+ */
 class MainActivity : AppCompatActivity() {
 
 	private lateinit var viewModel: ProjectViewModel
+
+	private lateinit var leftDrawer: LinearLayout
+	private lateinit var rightDrawer: LinearLayout
+	private lateinit var bottomDrawer: LinearLayout
+
+	private var leftOpen = false
+	private var rightOpen = false
+	private var bottomOpen = false
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
 		CrashLogger.install(applicationContext)
 		setContentView(R.layout.activity_main)
 
+		// Keep crash dialog
 		CrashLogger.getLastCrash(this)?.let { trace ->
 			android.app.AlertDialog.Builder(this)
 				.setTitle("Last crash")
@@ -35,39 +51,38 @@ class MainActivity : AppCompatActivity() {
 
 		viewModel = ViewModelProvider(this)[ProjectViewModel::class.java]
 
-		val pager = findViewById<ViewPager2>(R.id.viewPager)
-		val tabs = findViewById<TabLayout>(R.id.tabLayout)
-		pager.adapter = ProjectPagerAdapter(this)
-
-		val tabTitles = listOf("Mark & Cut", "Place", "Lightshow", "Splice")
-		TabLayoutMediator(tabs, pager) { tab, position ->
-			tab.text = tabTitles[position]
-		}.attach()
-
-		// Route real hardware pad presses into the same listener the virtual grid uses.
+		// Keep MIDI bridge alive so hardware still works later
 		MidiConnection.controller = MidiControllerBridge(viewModel)
 		MidiConnection.connectionObserver = object : MidiConnection.ConnectionObserver {
 			override fun onConnected(snapshot: MidiConnection.ConnectedDeviceSnapshot) {
 				viewModel.setConnectedDeviceName(snapshot.name)
 			}
-
 			override fun onDisconnected() {
 				viewModel.setConnectedDeviceName(null)
 			}
 		}
 
-		// NOTE: this catches a Launchpad plugged in WHILE the app is running via
-		// UsbMidiHandlerActivity's intent-filter. A device already plugged in before
-		// the app launches needs an explicit deviceList scan here too -- untested,
-		// flagging as a real-device check item.
+		leftDrawer = findViewById(R.id.leftDrawer)
+		rightDrawer = findViewById(R.id.rightDrawer)
+		bottomDrawer = findViewById(R.id.bottomDrawer)
 
-			// Long-pressing a cut on Place asks to jump back to Mark & Cut (tab 0) and
-			// highlight its mark; MarkAndCutFragment does the actual scroll+highlight
-			// and clears the request once it's applied.
-			viewModel.jumpToMarkRequest.observe(this) { segIndex ->
-				if (segIndex != null) {
-					pager.setCurrentItem(0, true)
-				}
-			}
+		findViewById<View>(R.id.leftPillHandle).setOnClickListener { toggleLeft() }
+		findViewById<View>(R.id.rightPillHandle).setOnClickListener { toggleRight() }
+		findViewById<View>(R.id.bottomPillHandle).setOnClickListener { toggleBottom() }
+	}
+
+	private fun toggleLeft() {
+		leftOpen = !leftOpen
+		leftDrawer.visibility = if (leftOpen) View.VISIBLE else View.GONE
+	}
+
+	private fun toggleRight() {
+		rightOpen = !rightOpen
+		rightDrawer.visibility = if (rightOpen) View.VISIBLE else View.GONE
+	}
+
+	private fun toggleBottom() {
+		bottomOpen = !bottomOpen
+		bottomDrawer.visibility = if (bottomOpen) View.VISIBLE else View.GONE
 	}
 }
