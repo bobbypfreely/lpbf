@@ -16,7 +16,23 @@ data class UnipackInfo(
 	val website: String?,
 )
 
-data class UnipackKeySoundEntry(val button: ButtonRef, val soundRelativePath: String, val loop: Int, val wormhole: Int)
+/**
+ * One keySound line, already converted to LPBF's 0-indexed ButtonRef.
+ *
+ * loop (Unipad semantics, NOT adjusted):
+ *   0 = play only while held
+ *   1 = play once (also the default when the field is omitted on disk)
+ *   N = play N times
+ *
+ * wormhole: 0-indexed target chain, or -1 if none.
+ *   On disk a positive integer is the 1-based chain to jump to; we store chain-1.
+ */
+data class UnipackKeySoundEntry(
+	val button: ButtonRef,
+	val soundRelativePath: String,
+	val loop: Int,
+	val wormhole: Int,
+)
 
 data class UnipackReadResult(
 	val info: UnipackInfo,
@@ -28,28 +44,18 @@ data class UnipackReadResult(
 )
 
 /**
- * Reads a Unipack zip -- format extracted directly from Unipad's own UniPackFolder.kt
- * (github.com/bobbypfreely/unipad-android) so anything read here stays compatible with
- * real Unipad/Launchpad hardware:
- *   info file:       plain text "key=value" lines (title, producerName, buttonX,
- *                     buttonY, chain, squareButton, website)
- *   keySound file:    plain text, one mapping per line:
- *                     "chain x y soundFileName [loop] [wormhole]" (all 1-indexed on
- *                     disk, converted to 0-indexed here). The same chain/x/y CAN repeat
- *                     across multiple lines -- Unipad plays those as a queue, which is
- *                     exactly LPBF's own multi-trigger stacking, so it needs no special
- *                     handling here at all, just import each line as its own segment.
- *   sounds/           the actual audio files keySound's soundFileName refers to.
- *   keyLed/           optional -- one file per button mapping (matched to keySound
- *                     entries 1:1 in file order, see KeyLedReader), each containing that
- *                     cut's own lightshow. Parsed by the caller via KeyLedReader, not
- *                     here -- this class only locates the folder, since turning it into
- *                     Patterns needs each sound's decoded duration, which isn't known
- *                     until MultiClipImporter decodes it.
+ * Reads a Unipack zip/folder -- format taken from Unipad's own UniPackFolder.kt so
+ * anything read here stays compatible with real Unipad/Launchpad hardware.
  *
- * info + keySound (the audio/mapping data) are always read. keyLedDir is exposed but
- * left unparsed for the same reason noted above -- if the pack has no keyLed folder,
- * this is simply null and callers skip lightshow import for it.
+ * keySound line on disk (1-indexed):
+ *   chain  x  y  soundFileName  [loop]  [wormhole]
+ *
+ * Coordinate system:
+ *   x = vertical (row), y = horizontal (column) -- same as Unipad docs.
+ *   Converted to 0-indexed ButtonRef(chain, x, y) here.
+ *
+ * Same chain/x/y MAY repeat across lines -- Unipad queues those as multi-hit;
+ * LPBF imports each line as its own segment stacked on that pad.
  */
 object UnipackReader {
 
@@ -72,8 +78,6 @@ object UnipackReader {
 	}
 
 	fun read(rootFolder: File): UnipackReadResult {
-		// Some packs zip with an extra top-level folder wrapping everything -- if the
-		// expected files aren't at the top level, step into the single child folder.
 		val actualRoot = if (hasPackFiles(rootFolder)) {
 			rootFolder
 		} else {
@@ -129,15 +133,30 @@ object UnipackReader {
 				val s = raw.trim()
 				if (s.isEmpty()) return@forEach
 				val split = s.trim().split("\\s+".toRegex())
-				if (split.size <= 2) return@forEach
+				if (split.size < 4) return@forEach
 				try {
+					// Disk is 1-indexed → ButtonRef is 0-indexed
 					val c = split[0].toInt() - 1
-					val x = split[1].toInt() - 1
-					val y = split[2].toInt() - 1
+					val x = split[1].toInt() - 1   // vertical (row)
+					val y = split[2].toInt() - 1   // horizontal (column)
 					val soundURL = split[3]
-					val loop = if (split.size >= 5) split[4].toInt() - 1 else 0
-					val wormhole = if (split.size >= 6) split[5].toInt() - 1 else -1
-					entries.add(UnipackKeySoundEntry(ButtonRef(chain = c, x = x, y = y), soundURL, loop, wormhole))
+					// Keep Unipad loop semantics exactly (do NOT subtract 1)
+					val loop = if (split.size >= 5) split[4].toInt() else 1
+					// Wormhole on disk is 1-based chain number; store 0-based, -1 = none
+					val wormhole = if (split.size >= 6) {
+						val rawWh = split[5].toInt()
+						if (rawWh <= 0) -1 else rawWh - 1
+					} else {
+						-1
+					}
+					entries.add(
+						UnipackKeySoundEntry(
+							button = ButtonRef(chain = c, x = x, y = y),
+							soundRelativePath = soundURL,
+							loop = loop,
+							wormhole = wormhole,
+						)
+					)
 				} catch (e: Exception) {
 					warnings.add("keySound: [$s] couldn't be parsed (${e.message})")
 				}
