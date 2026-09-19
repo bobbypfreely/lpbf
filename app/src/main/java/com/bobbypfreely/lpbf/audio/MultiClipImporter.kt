@@ -9,13 +9,16 @@ import java.io.File
 /** One audio source to fold into a concatenated import timeline, with an optional
  * pre-existing button assignment (used when importing a Unipack's keySound mapping;
  * left null for a plain "import pre-cut tracks" pick where nothing's mapped yet).
- * [rawLedEvents] is that source's matching keyLED file, if any, already parsed but
- * still in absolute-ms form -- converting to a duration-agnostic Pattern needs this
- * source's own decoded duration, which isn't known until this class decodes it below. */
+ *
+ * [loop] / [wormhole] use Unipad semantics (loop 0 = hold, 1 = once; wormhole -1 = none).
+ * Plain pre-cut imports leave the defaults so live mark-while-playing behaviour is unchanged.
+ */
 data class ImportClipSource(
 	val filePath: String,
 	val button: ButtonRef? = null,
 	val rawLedEvents: List<KeyLedReader.TimedEvent>? = null,
+	val loop: Int = 1,
+	val wormhole: Int = -1,
 )
 
 data class MultiClipImportResult(
@@ -23,8 +26,10 @@ data class MultiClipImportResult(
 	val cachedFilePath: String,
 	val marks: List<Int>,          // includes leading 0, same format MarkingSession.restore() expects
 	val buttons: List<ButtonRef?>, // one per segment, size == marks.size - 1
-	val patterns: List<Pattern?>,  // one per segment, size == buttons.size, all-null unless the source was a Unipack with keyLED files
-	val skipped: List<String>,     // human-readable reasons any source didn't make it in
+	val patterns: List<Pattern?>,  // one per segment
+	val loops: List<Int>,          // one per segment (Unipad loop semantics)
+	val wormholes: List<Int>,      // one per segment (-1 = none)
+	val skipped: List<String>,
 )
 
 /**
@@ -33,6 +38,8 @@ data class MultiClipImportResult(
  * whether from a plain folder of files, or read out of an imported Unipack's keySound
  * table -- reuse the exact same MarkingSession/Place/Splice pipeline as anything cut
  * by hand on Mark & Cut, with zero changes to that pipeline.
+ *
+ * Live mark-while-playing is unaffected: that path never goes through here.
  */
 object MultiClipImporter {
 
@@ -45,6 +52,8 @@ object MultiClipImporter {
 		val marks = mutableListOf(0)
 		val buttons = mutableListOf<ButtonRef?>()
 		val patterns = mutableListOf<Pattern?>()
+		val loops = mutableListOf<Int>()
+		val wormholes = mutableListOf<Int>()
 		val skipped = mutableListOf<String>()
 		var cumulativeMs = 0
 
@@ -71,6 +80,8 @@ object MultiClipImporter {
 			cumulativeMs += decoded.totalDurationMs
 			marks.add(cumulativeMs)
 			buttons.add(source.button)
+			loops.add(source.loop)
+			wormholes.add(source.wormhole)
 			patterns.add(
 				source.rawLedEvents?.let { events ->
 					KeyLedReader.toPattern(File(source.filePath).nameWithoutExtension, events, decoded.totalDurationMs)
@@ -93,6 +104,8 @@ object MultiClipImporter {
 			marks = marks,
 			buttons = buttons,
 			patterns = patterns,
+			loops = loops,
+			wormholes = wormholes,
 			skipped = skipped,
 		)
 	}
