@@ -7,15 +7,15 @@
 	android:layout_height="match_parent"
 	android:background="#0B0B12">
 
-	<!-- CENTER: BIG LAUNCHPAD -->
+	<!-- ===================== CENTER: BIG LAUNCHPAD ===================== -->
 	<FrameLayout
 		android:id="@+id/centerPadContainer"
 		android:layout_width="match_parent"
 		android:layout_height="match_parent"
-		android:layout_marginStart="72dp"
-		android:layout_marginEnd="72dp"
-		android:layout_marginBottom="72dp"
-		android:padding="8dp">
+		android:layout_marginStart="64dp"
+		android:layout_marginEnd="64dp"
+		android:layout_marginBottom="64dp"
+		android:padding="6dp">
 
 		<com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
 			android:id="@+id/mainLaunchpadGrid"
@@ -26,17 +26,17 @@
 
 	</FrameLayout>
 
-	<!-- LEFT PILL = KeyLED -->
+	<!-- ===================== LEFT PILL (KeyLED) ===================== -->
 	<LinearLayout
 		android:id="@+id/leftPillHandle"
-		android:layout_width="56dp"
-		android:layout_height="160dp"
+		android:layout_width="52dp"
+		android:layout_height="150dp"
 		android:layout_gravity="start|center_vertical"
-		android:layout_marginStart="8dp"
+		android:layout_marginStart="6dp"
 		android:orientation="vertical"
 		android:gravity="center"
 		android:background="#1A1A2E"
-		android:elevation="6dp"
+		android:elevation="8dp"
 		android:clickable="true"
 		android:focusable="true">
 
@@ -45,20 +45,20 @@
 			android:layout_height="wrap_content"
 			android:text="LED"
 			android:textColor="#E0E0FF"
-			android:textSize="12sp"
+			android:textSize="13sp"
 			android:textStyle="bold"
 			android:rotation="-90" />
 	</LinearLayout>
 
-	<!-- LEFT DRAWER (KeyLED list + folder + editor) -->
+	<!-- LEFT DRAWER -->
 	<LinearLayout
 		android:id="@+id/leftDrawer"
-		android:layout_width="280dp"
+		android:layout_width="240dp"
 		android:layout_height="match_parent"
 		android:layout_gravity="start"
 		android:orientation="vertical"
 		android:background="#12121C"
-		android:elevation="12dp"
+		android:elevation="14dp"
 		android:visibility="gone"
 		android:padding="12dp">
 
@@ -90,7 +90,7 @@
 		<LinearLayout
 			android:id="@+id/ledFolderArea"
 			android:layout_width="match_parent"
-			android:layout_height="120dp"
+			android:layout_height="110dp"
 			android:orientation="vertical"
 			android:background="#0F0F1A"
 			android:padding="8dp">
@@ -108,12 +108,12 @@
 			android:text="Editor"
 			android:textColor="#FFFFFF"
 			android:textSize="14sp"
-			android:paddingTop="12dp" />
+			android:paddingTop="10dp" />
 
 		<EditText
 			android:id="@+id/ledEditor"
 			android:layout_width="match_parent"
-			android:layout_height="100dp"
+			android:layout_height="90dp"
 			android:background="#0A0A12"
 			android:gravity="top|start"
 			android:hint="LED pattern editor…"
@@ -124,6 +124,194 @@
 			android:inputType="textMultiLine" />
 	</LinearLayout>
 
-	<!-- RIGHT PILL = KeySound -->
+	<!-- ===================== RIGHT PILL (KeySound) ===================== -->
 	<LinearLayout
-		android:id="@+id/right
+		android:id="@+id/rightPillHandle"
+		android:layout_width="52dp"
+		android:layout_height="150dp"
+		android:layout_gravity="end|center_vertical"
+		android:layout_marginEnd="6dp"
+		android:orientation="vertical"
+		android:gravity="center"
+		android:background="#1A1A2E"
+		android:elevation="8dp"
+		android:clickable="true"
+		android:focusable="true">
+
+		<TextView
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="SOUND"
+			android:textColor="#E0FFE0"
+			android:textSize="13sp"
+			android:textStyle="bold"
+			android:rotation="90" />
+	</LinearLayout>
+
+	<!-- RIGHT DRAWER -->
+	<LinearLayout
+		android:id="@+id/rightDrawer"
+		android:layout_width="240dp"
+		android:layout_height="match_parent"
+		android:layout_gravity="end"
+		android:orientation="vertical"
+		android:background="#12121C"
+		android:elevation="14dp"
+		android:visibility="gone"
+		android:padding="12dp">
+
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="KeySound"
+			android:textColor="#FFFFFF"
+			android:textSize="18sp"
+			android:textStyle="bold"
+			android:paddingBottom="8dp" />
+
+		<androidx.recyclerview.widget.RecyclerView
+			android:id="@+id/soundFileList"
+			android:layout_width="match_parent"
+			android:layout_height="0dp"
+			android:layout_weight="1"
+			android:background="#0A0A12" />
+
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Folder: sounds"
+			android:textColor="#8888AA"
+			android:textSize="12sp"
+			android:paddingTop="8dp"
+			android:paddingBottom="4dp" />
+
+		<LinearLayout
+			android:id="@+id/soundFolderArea"
+			android:layout_width="match_parent"
+			android:layout_height="110dp"
+			android:orientation="vertical"
+			android:background="#0F0F1A"
+			android:padding="8dp">
+			<TextView
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:text="(Sound files will appear here)"
+				android:textColor="#555577"
+				android:textSize="12sp" />
+		</LinearLayout>
+
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Editor"
+			android:textColor="#FFFFFF"
+			android:textSize="14sp"
+			android:paddingTop="10dp" />
+
+		<EditText
+			android:id="@+id/soundEditor"
+			android:layout_width="match_parent"
+			android:layout_height="90dp"
+			android:background="#0A0A12"
+			android:gravity="top|start"
+			android:hint="Sound mapping editor…"
+			android:textColor="#CCFFCC"
+			android:textColorHint="#445566"
+			android:padding="8dp"
+			android:textSize="13sp"
+			android:inputType="textMultiLine" />
+	</LinearLayout>
+
+	<!-- ===================== BOTTOM PILL (Waveform) ===================== -->
+	<LinearLayout
+		android:id="@+id/bottomPillHandle"
+		android:layout_width="170dp"
+		android:layout_height="46dp"
+		android:layout_gravity="bottom|center_horizontal"
+		android:layout_marginBottom="10dp"
+		android:orientation="horizontal"
+		android:gravity="center"
+		android:background="#1A1A2E"
+		android:elevation="8dp"
+		android:clickable="true"
+		android:focusable="true">
+
+		<TextView
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="WAVEFORM"
+			android:textColor="#FFE0E0"
+			android:textSize="13sp"
+			android:textStyle="bold"
+			android:letterSpacing="0.08" />
+	</LinearLayout>
+
+	<!-- BOTTOM DRAWER -->
+	<LinearLayout
+		android:id="@+id/bottomDrawer"
+		android:layout_width="match_parent"
+		android:layout_height="300dp"
+		android:layout_gravity="bottom"
+		android:orientation="vertical"
+		android:background="#12121C"
+		android:elevation="16dp"
+		android:visibility="gone"
+		android:padding="12dp">
+
+		<View
+			android:layout_width="40dp"
+			android:layout_height="4dp"
+			android:layout_gravity="center_horizontal"
+			android:background="#444466"
+			android:layout_marginBottom="8dp" />
+
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Waveform / Mark & Cut"
+			android:textColor="#FFFFFF"
+			android:textSize="16sp"
+			android:textStyle="bold"
+			android:paddingBottom="8dp" />
+
+		<FrameLayout
+			android:id="@+id/waveformPlaceholder"
+			android:layout_width="match_parent"
+			android:layout_height="0dp"
+			android:layout_weight="1"
+			android:background="#0F0F1A">
+
+			<TextView
+				android:layout_width="wrap_content"
+				android:layout_height="wrap_content"
+				android:layout_gravity="center"
+				android:text="Waveform goes here"
+				android:textColor="#555577"
+				android:textSize="14sp" />
+		</FrameLayout>
+
+		<LinearLayout
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:orientation="horizontal"
+			android:gravity="center"
+			android:paddingTop="8dp">
+
+			<Button
+				android:id="@+id/btnPlayPause"
+				android:layout_width="wrap_content"
+				android:layout_height="wrap_content"
+				android:text="Play"
+				android:enabled="false" />
+
+			<Button
+				android:id="@+id/btnMark"
+				android:layout_width="wrap_content"
+				android:layout_height="wrap_content"
+				android:layout_marginStart="12dp"
+				android:text="Mark"
+				android:enabled="false" />
+		</LinearLayout>
+	</LinearLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
