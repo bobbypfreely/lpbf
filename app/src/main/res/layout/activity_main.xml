@@ -1,18 +1,129 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+	xmlns:android="http://schemas.android.com/apk/res/android"
+	xmlns:app="http://schemas.android.com/apk/res-auto"
+	android:id="@+id/rootCoordinator"
 	android:layout_width="match_parent"
 	android:layout_height="match_parent"
-	android:orientation="vertical">
+	android:background="#0B0B12">
 
-	<com.google.android.material.tabs.TabLayout
-		android:id="@+id/tabLayout"
+	<!-- CENTER: BIG LAUNCHPAD -->
+	<FrameLayout
+		android:id="@+id/centerPadContainer"
 		android:layout_width="match_parent"
-		android:layout_height="wrap_content" />
+		android:layout_height="match_parent"
+		android:layout_marginStart="72dp"
+		android:layout_marginEnd="72dp"
+		android:layout_marginBottom="72dp"
+		android:padding="8dp">
 
-	<androidx.viewpager2.widget.ViewPager2
-		android:id="@+id/viewPager"
-		android:layout_width="match_parent"
-		android:layout_height="0dp"
-		android:layout_weight="1" />
+		<com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
+			android:id="@+id/mainLaunchpadGrid"
+			android:layout_width="match_parent"
+			android:layout_height="match_parent"
+			android:layout_gravity="center"
+			android:background="#0F0F1A" />
 
-</LinearLayout>
+	</FrameLayout>
+
+	<!-- LEFT PILL = KeyLED -->
+	<LinearLayout
+		android:id="@+id/leftPillHandle"
+		android:layout_width="56dp"
+		android:layout_height="160dp"
+		android:layout_gravity="start|center_vertical"
+		android:layout_marginStart="8dp"
+		android:orientation="vertical"
+		android:gravity="center"
+		android:background="#1A1A2E"
+		android:elevation="6dp"
+		android:clickable="true"
+		android:focusable="true">
+
+		<TextView
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="LED"
+			android:textColor="#E0E0FF"
+			android:textSize="12sp"
+			android:textStyle="bold"
+			android:rotation="-90" />
+	</LinearLayout>
+
+	<!-- LEFT DRAWER (KeyLED list + folder + editor) -->
+	<LinearLayout
+		android:id="@+id/leftDrawer"
+		android:layout_width="280dp"
+		android:layout_height="match_parent"
+		android:layout_gravity="start"
+		android:orientation="vertical"
+		android:background="#12121C"
+		android:elevation="12dp"
+		android:visibility="gone"
+		android:padding="12dp">
+
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="KeyLED"
+			android:textColor="#FFFFFF"
+			android:textSize="18sp"
+			android:textStyle="bold"
+			android:paddingBottom="8dp" />
+
+		<androidx.recyclerview.widget.RecyclerView
+			android:id="@+id/ledFileList"
+			android:layout_width="match_parent"
+			android:layout_height="0dp"
+			android:layout_weight="1"
+			android:background="#0A0A12" />
+
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Folder: keyLed"
+			android:textColor="#8888AA"
+			android:textSize="12sp"
+			android:paddingTop="8dp"
+			android:paddingBottom="4dp" />
+
+		<LinearLayout
+			android:id="@+id/ledFolderArea"
+			android:layout_width="match_parent"
+			android:layout_height="120dp"
+			android:orientation="vertical"
+			android:background="#0F0F1A"
+			android:padding="8dp">
+			<TextView
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:text="(LED files will appear here)"
+				android:textColor="#555577"
+				android:textSize="12sp" />
+		</LinearLayout>
+
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Editor"
+			android:textColor="#FFFFFF"
+			android:textSize="14sp"
+			android:paddingTop="12dp" />
+
+		<EditText
+			android:id="@+id/ledEditor"
+			android:layout_width="match_parent"
+			android:layout_height="100dp"
+			android:background="#0A0A12"
+			android:gravity="top|start"
+			android:hint="LED pattern editor…"
+			android:textColor="#CCE0FF"
+			android:textColorHint="#445566"
+			android:padding="8dp"
+			android:textSize="13sp"
+			android:inputType="textMultiLine" />
+	</LinearLayout>
+
+	<!-- RIGHT PILL = KeySound -->
+	<LinearLayout
+		android:id="@+id/right
