@@ -11,6 +11,17 @@ import java.util.zip.ZipOutputStream
  * 1-indexed chain/x/y on disk, same keyLed/ folder convention -- so anything written
  * here re-imports cleanly and plays on real Unipad/Launchpad hardware.
  *
+ * keySound line on disk (1-indexed):
+ *   chain  x  y  soundFileName  [loop]  [wormhole]
+ *
+ * loop (Unipad semantics, written as-is):
+ *   0 = play only while held
+ *   1 = play once (default)
+ *   N = play N times
+ *
+ * wormhole: on disk a positive integer is the 1-based chain to jump to.
+ *   Internally we store 0-indexed chain or -1 for none; convert on write.
+ *
  * Real packs leave the FIRST LINE of every plain-text file blank (info, keySound, and
  * each keyLED file) -- some parsers, including Unipad's own, don't recognize line 1, so
  * every text entry here is written with a leading blank line to match.
@@ -25,6 +36,8 @@ object UnipackWriter {
 		val wavBytes: ByteArray,
 		val keyLedFileName: String?,
 		val keyLedText: String?,
+		val loop: Int = 1,
+		val wormhole: Int = -1,      // 0-indexed chain, or -1 for none
 	)
 
 	fun write(
@@ -74,12 +87,31 @@ object UnipackWriter {
 		return sb.toString()
 	}
 
+	/**
+	 * Writes keySound lines matching UnipackReader:
+	 *   chain x y soundFile  [loop]  [wormhole]
+	 * Always includes loop (even when 1) when wormhole is set, so the field positions stay stable.
+	 * Omits trailing fields when both are defaults (loop=1, wormhole=-1) to match common packs.
+	 */
 	private fun buildKeySoundText(entries: List<SoundEntry>): String {
 		val sb = StringBuilder("\n")
 		entries.forEach { e ->
 			val b = e.button
-			sb.append(b.chain + 1).append(' ').append(b.x + 1).append(' ').append(b.y + 1)
-				.append(' ').append(e.soundFileName).append('\n')
+			sb.append(b.chain + 1).append(' ')
+				.append(b.x + 1).append(' ')
+				.append(b.y + 1).append(' ')
+				.append(e.soundFileName)
+
+			val hasWormhole = e.wormhole >= 0
+			val nonDefaultLoop = e.loop != 1
+			if (hasWormhole || nonDefaultLoop) {
+				sb.append(' ').append(e.loop)
+			}
+			if (hasWormhole) {
+				// Disk is 1-based chain number
+				sb.append(' ').append(e.wormhole + 1)
+			}
+			sb.append('\n')
 		}
 		return sb.toString()
 	}
