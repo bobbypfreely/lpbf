@@ -24,6 +24,8 @@ import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
  * Left KeyLED / right KeySound / bottom Mark&Cut drawers inset the pad square, never cover it.
  * Pad hits preview the mapped cut via a single reused ExoPlaybackController (less clicky than
  * create/destroy per hit).
+ *
+ * Default place mode is PLAY: after Unipack import, taps fire clips instead of re-assigning.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -95,7 +97,8 @@ class MainActivity : AppCompatActivity() {
 
 		launchpadGrid.listener = viewModel
 		viewModel.isPlaceTabActive = true
-		viewModel.setPlaceMode(ProjectViewModel.PlaceMode.HYBRID)
+		// PLAY: after import, pad taps fire clips; switch to EDIT/HYBRID only when mapping
+		viewModel.setPlaceMode(ProjectViewModel.PlaceMode.PLAY)
 
 		findViewById<View>(R.id.leftPillHandle).setOnClickListener { toggleLeft() }
 		findViewById<View>(R.id.rightPillHandle).setOnClickListener { toggleRight() }
