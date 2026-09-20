@@ -1,1 +1,257 @@
-SEE_FILE_/tmp/activity_main_wired.xml
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+	xmlns:android="http://schemas.android.com/apk/res/android"
+	xmlns:app="http://schemas.android.com/apk/res-auto"
+	android:id="@+id/rootCoordinator"
+	android:layout_width="match_parent"
+	android:layout_height="match_parent"
+	android:background="#0B0B12">
+
+	<FrameLayout
+		android:id="@+id/centerPadContainer"
+		android:layout_width="match_parent"
+		android:layout_height="match_parent"
+		android:layout_marginStart="64dp"
+		android:layout_marginEnd="64dp"
+		android:layout_marginBottom="64dp"
+		android:padding="6dp">
+
+		<com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
+			android:id="@+id/mainLaunchpadGrid"
+			android:layout_width="match_parent"
+			android:layout_height="match_parent"
+			android:layout_gravity="center"
+			android:background="#0F0F1A" />
+	</FrameLayout>
+
+	<LinearLayout
+		android:id="@+id/leftPillHandle"
+		android:layout_width="52dp"
+		android:layout_height="150dp"
+		android:layout_gravity="start|center_vertical"
+		android:layout_marginStart="6dp"
+		android:orientation="vertical"
+		android:gravity="center"
+		android:background="#1A1A2E"
+		android:elevation="8dp"
+		android:clickable="true"
+		android:focusable="true">
+		<TextView
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="LED"
+			android:textColor="#E0E0FF"
+			android:textSize="13sp"
+			android:textStyle="bold"
+			android:rotation="-90" />
+	</LinearLayout>
+
+	<LinearLayout
+		android:id="@+id/leftDrawer"
+		android:layout_width="240dp"
+		android:layout_height="match_parent"
+		android:layout_gravity="start"
+		android:orientation="vertical"
+		android:background="#12121C"
+		android:elevation="14dp"
+		android:visibility="gone"
+		android:padding="12dp">
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="KeyLED"
+			android:textColor="#FFFFFF"
+			android:textSize="18sp"
+			android:textStyle="bold"
+			android:paddingBottom="8dp" />
+		<ScrollView
+			android:layout_width="match_parent"
+			android:layout_height="0dp"
+			android:layout_weight="1"
+			android:background="#0A0A12">
+			<TextView
+				android:id="@+id/ledFolderSummary"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:padding="8dp"
+				android:text="(no LED patterns yet)"
+				android:textColor="#A0A0CC"
+				android:textSize="12sp"
+				android:fontFamily="monospace" />
+		</ScrollView>
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Folder: keyLed"
+			android:textColor="#8888AA"
+			android:textSize="12sp"
+			android:paddingTop="8dp"
+			android:paddingBottom="4dp" />
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Editor"
+			android:textColor="#FFFFFF"
+			android:textSize="14sp"
+			android:paddingTop="10dp" />
+		<EditText
+			android:id="@+id/ledEditor"
+			android:layout_width="match_parent"
+			android:layout_height="120dp"
+			android:background="#0A0A12"
+			android:gravity="top|start"
+			android:hint="LED list (chain x y name)…"
+			android:textColor="#CCE0FF"
+			android:textColorHint="#445566"
+			android:padding="8dp"
+			android:textSize="12sp"
+			android:fontFamily="monospace"
+			android:inputType="textMultiLine" />
+	</LinearLayout>
+
+	<LinearLayout
+		android:id="@+id/rightPillHandle"
+		android:layout_width="52dp"
+		android:layout_height="150dp"
+		android:layout_gravity="end|center_vertical"
+		android:layout_marginEnd="6dp"
+		android:orientation="vertical"
+		android:gravity="center"
+		android:background="#1A1A2E"
+		android:elevation="8dp"
+		android:clickable="true"
+		android:focusable="true">
+		<TextView
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="SOUND"
+			android:textColor="#E0FFE0"
+			android:textSize="13sp"
+			android:textStyle="bold"
+			android:rotation="90" />
+	</LinearLayout>
+
+	<LinearLayout
+		android:id="@+id/rightDrawer"
+		android:layout_width="240dp"
+		android:layout_height="match_parent"
+		android:layout_gravity="end"
+		android:orientation="vertical"
+		android:background="#12121C"
+		android:elevation="14dp"
+		android:visibility="gone"
+		android:padding="12dp">
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="KeySound"
+			android:textColor="#FFFFFF"
+			android:textSize="18sp"
+			android:textStyle="bold"
+			android:paddingBottom="8dp" />
+		<ScrollView
+			android:layout_width="match_parent"
+			android:layout_height="0dp"
+			android:layout_weight="1"
+			android:background="#0A0A12">
+			<TextView
+				android:id="@+id/soundFolderSummary"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:padding="8dp"
+				android:text="(no mappings yet)"
+				android:textColor="#A0CCA0"
+				android:textSize="12sp"
+				android:fontFamily="monospace" />
+		</ScrollView>
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Folder: sounds"
+			android:textColor="#8888AA"
+			android:textSize="12sp"
+			android:paddingTop="8dp"
+			android:paddingBottom="4dp" />
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Editor"
+			android:textColor="#FFFFFF"
+			android:textSize="14sp"
+			android:paddingTop="10dp" />
+		<EditText
+			android:id="@+id/soundEditor"
+			android:layout_width="match_parent"
+			android:layout_height="120dp"
+			android:background="#0A0A12"
+			android:gravity="top|start"
+			android:hint="Sound mapping (chain x y)…"
+			android:textColor="#CCFFCC"
+			android:textColorHint="#445566"
+			android:padding="8dp"
+			android:textSize="12sp"
+			android:fontFamily="monospace"
+			android:inputType="textMultiLine" />
+		<Button
+			android:id="@+id/btnExportUnipack"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:layout_marginTop="8dp"
+			android:text="Export Unipack" />
+	</LinearLayout>
+
+	<LinearLayout
+		android:id="@+id/bottomPillHandle"
+		android:layout_width="170dp"
+		android:layout_height="46dp"
+		android:layout_gravity="bottom|center_horizontal"
+		android:layout_marginBottom="10dp"
+		android:orientation="horizontal"
+		android:gravity="center"
+		android:background="#1A1A2E"
+		android:elevation="8dp"
+		android:clickable="true"
+		android:focusable="true">
+		<TextView
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="WAVEFORM"
+			android:textColor="#FFE0E0"
+			android:textSize="13sp"
+			android:textStyle="bold"
+			android:letterSpacing="0.08" />
+	</LinearLayout>
+
+	<LinearLayout
+		android:id="@+id/bottomDrawer"
+		android:layout_width="match_parent"
+		android:layout_height="320dp"
+		android:layout_gravity="bottom"
+		android:orientation="vertical"
+		android:background="#12121C"
+		android:elevation="16dp"
+		android:visibility="gone"
+		android:padding="8dp">
+		<View
+			android:layout_width="40dp"
+			android:layout_height="4dp"
+			android:layout_gravity="center_horizontal"
+			android:background="#444466"
+			android:layout_marginBottom="6dp" />
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Waveform / Mark & Cut"
+			android:textColor="#FFFFFF"
+			android:textSize="14sp"
+			android:textStyle="bold"
+			android:paddingBottom="4dp" />
+		<FrameLayout
+			android:id="@+id/waveformPlaceholder"
+			android:layout_width="match_parent"
+			android:layout_height="0dp"
+			android:layout_weight="1"
+			android:background="#0F0F1A" />
+	</LinearLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
