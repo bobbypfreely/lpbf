@@ -1,7 +1,10 @@
 package com.bobbypfreely.lpbf
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -13,12 +16,14 @@ import com.bobbypfreely.lpbf.midi.MidiConnection
 import com.bobbypfreely.lpbf.ui.MidiControllerBridge
 import com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
+import com.bobbypfreely.lpbf.waveform.ExoPlaybackController
 import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 
 /**
- * Launchpad's Best Friend -- center grid always visible.
- * Left = KeyLED list + editor, Right = KeySound list + editor, Bottom = Mark & Cut waveform.
- * Pad presses route through ProjectViewModel (Place / Hybrid mapping on the fly).
+ * Launchpad's Best Friend -- center = full Launchpad chrome (top 8 + 8x8 + side chains).
+ * Left KeyLED / right KeySound / bottom Mark&Cut drawers inset the pad square, never cover it.
+ * Pad hits preview the mapped cut via a single reused ExoPlaybackController (less clicky than
+ * create/destroy per hit).
  */
 class MainActivity : AppCompatActivity() {
 
@@ -37,12 +42,17 @@ class MainActivity : AppCompatActivity() {
 	private var rightOpen = false
 	private var bottomOpen = false
 
-	private val baseSideMarginDp = 64
-	private val baseBottomMarginDp = 64
+	private val baseSideMarginDp = 56
+	private val baseBottomMarginDp = 56
 	private val drawerWidthDp = 240
+	private val bottomDrawerHeightDp = 320
 
 	private val soundLines = mutableListOf<String>()
 	private val ledLines = mutableListOf<String>()
+
+	private var previewController: ExoPlaybackController? = null
+	private val previewStopHandler = Handler(Looper.getMainLooper())
+	private var previewLoadedPath: String? = null
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
@@ -94,16 +104,46 @@ class MainActivity : AppCompatActivity() {
 
 		viewModel.segmentVersion.observe(this) { refreshSideLists() }
 		viewModel.markingSession.observe(this) { refreshSideLists() }
+		viewModel.currentChain.observe(this) { chain ->
+			launchpadGrid.setActiveChain(chain ?: 0)
+			refreshSideLists()
+		}
 		viewModel.previewRequest.observe(this) { req ->
-			if (req != null && req.x >= 0 && req.y >= 0) {
-				launchpadGrid.setPadLit(req.x, req.y, 0xFF00ADB5.toInt())
-				launchpadGrid.postDelayed({ launchpadGrid.clearPad(req.x, req.y) }, 250)
+			if (req != null) {
+				if (req.x >= 0 && req.y >= 0) {
+					launchpadGrid.setPadLit(req.x, req.y, 0xFF00ADB5.toInt())
+					launchpadGrid.postDelayed({ launchpadGrid.clearPad(req.x, req.y) }, 200)
+				}
+				playPadPreview(req.startMs, req.endMs)
 				viewModel.clearPreviewRequest()
 			}
 		}
 
-		updateCenterMargins()
+		updateCenterInsets()
 		ensureWaveformFragment()
+	}
+
+	override fun onDestroy() {
+		previewStopHandler.removeCallbacksAndMessages(null)
+		previewController?.release()
+		previewController = null
+		super.onDestroy()
+	}
+
+	private fun playPadPreview(startMs: Int, endMs: Int) {
+		val path = viewModel.cachedFilePath ?: return
+		previewStopHandler.removeCallbacksAndMessages(null)
+
+		val controller = previewController ?: ExoPlaybackController(this).also { previewController = it }
+		if (previewLoadedPath != path) {
+			controller.load(path)
+			previewLoadedPath = path
+		}
+		controller.playFrom(startMs.coerceAtLeast(0))
+		val durationMs = (endMs - startMs).coerceAtLeast(1).toLong()
+		previewStopHandler.postDelayed({
+			controller.pause()
+		}, durationMs)
 	}
 
 	private fun ensureWaveformFragment() {
@@ -116,6 +156,7 @@ class MainActivity : AppCompatActivity() {
 
 	private fun refreshSideLists() {
 		val session = viewModel.markingSession.value
+		val activeChain = viewModel.currentChain.value ?: 0
 		soundLines.clear()
 		ledLines.clear()
 		if (session != null) {
@@ -140,15 +181,16 @@ class MainActivity : AppCompatActivity() {
 			if (soundLines.isEmpty()) "(no mappings yet)" else soundLines.joinToString("\n")
 		findViewById<TextView?>(R.id.ledFolderSummary)?.text =
 			if (ledLines.isEmpty()) "(no LED patterns yet)" else ledLines.joinToString("\n")
-
 		soundEditor.setText(soundLines.joinToString("\n"))
 		ledEditor.setText(ledLines.joinToString("\n"))
 
 		launchpadGrid.clearAllPads()
 		launchpadGrid.clearAllHighlights()
-		session?.segments()?.forEach { seg ->
-			val b = seg.button ?: return@forEach
-			launchpadGrid.setPadHighlighted(b.x, b.y, 0xFF4CAF50.toInt())
+		val litColor = 0xFF00ADB5.toInt()
+		session?.segments()?.forEachIndexed { index, seg ->
+			val b = seg.button ?: return@forEachIndexed
+			if (b.chain != activeChain) return@forEachIndexed
+			launchpadGrid.setPadLit(b.x, b.y, litColor, (index + 1).toString())
 		}
 	}
 
@@ -188,8 +230,8 @@ class MainActivity : AppCompatActivity() {
 		leftOpen = !leftOpen
 		leftDrawer.visibility = if (leftOpen) View.VISIBLE else View.GONE
 		viewModel.isLightshowTabActive = leftOpen && !bottomOpen
-		viewModel.isPlaceTabActive = !leftOpen || rightOpen
-		updateCenterMargins()
+		viewModel.isPlaceTabActive = true
+		updateCenterInsets()
 		refreshSideLists()
 	}
 
@@ -197,7 +239,7 @@ class MainActivity : AppCompatActivity() {
 		rightOpen = !rightOpen
 		rightDrawer.visibility = if (rightOpen) View.VISIBLE else View.GONE
 		viewModel.isPlaceTabActive = true
-		updateCenterMargins()
+		updateCenterInsets()
 		refreshSideLists()
 	}
 
@@ -206,19 +248,23 @@ class MainActivity : AppCompatActivity() {
 		bottomDrawer.visibility = if (bottomOpen) View.VISIBLE else View.GONE
 		viewModel.isMarkAndCutTabActive = bottomOpen
 		if (bottomOpen) ensureWaveformFragment()
-		updateCenterMargins()
+		updateCenterInsets()
 	}
 
-	private fun updateCenterMargins() {
+	private fun updateCenterInsets() {
 		val density = resources.displayMetrics.density
 		val left = if (leftOpen) (drawerWidthDp * density).toInt() else (baseSideMarginDp * density).toInt()
 		val right = if (rightOpen) (drawerWidthDp * density).toInt() else (baseSideMarginDp * density).toInt()
-		val bottom = if (bottomOpen) (300 * density).toInt() else (baseBottomMarginDp * density).toInt()
+		val bottom = if (bottomOpen) (bottomDrawerHeightDp * density).toInt() else (baseBottomMarginDp * density).toInt()
+		val top = (8 * density).toInt()
 
-		val lp = centerPadContainer.layoutParams as android.view.ViewGroup.MarginLayoutParams
+		val lp = centerPadContainer.layoutParams as ViewGroup.MarginLayoutParams
 		lp.leftMargin = left
 		lp.rightMargin = right
 		lp.bottomMargin = bottom
+		lp.topMargin = top
 		centerPadContainer.layoutParams = lp
+		centerPadContainer.requestLayout()
+		launchpadGrid.requestLayout()
 	}
 }
