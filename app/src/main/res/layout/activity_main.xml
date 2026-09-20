@@ -11,29 +11,30 @@
 		android:id="@+id/centerPadContainer"
 		android:layout_width="match_parent"
 		android:layout_height="match_parent"
-		android:layout_marginStart="64dp"
-		android:layout_marginEnd="64dp"
-		android:layout_marginBottom="64dp"
-		android:padding="6dp">
+		android:layout_marginStart="56dp"
+		android:layout_marginEnd="56dp"
+		android:layout_marginTop="8dp"
+		android:layout_marginBottom="56dp"
+		android:padding="4dp">
 
 		<com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
 			android:id="@+id/mainLaunchpadGrid"
 			android:layout_width="match_parent"
 			android:layout_height="match_parent"
 			android:layout_gravity="center"
-			android:background="#0F0F1A" />
+			android:background="#0B0B12" />
 	</FrameLayout>
 
 	<LinearLayout
 		android:id="@+id/leftPillHandle"
-		android:layout_width="52dp"
-		android:layout_height="150dp"
+		android:layout_width="48dp"
+		android:layout_height="140dp"
 		android:layout_gravity="start|center_vertical"
-		android:layout_marginStart="6dp"
+		android:layout_marginStart="4dp"
 		android:orientation="vertical"
 		android:gravity="center"
 		android:background="#1A1A2E"
-		android:elevation="8dp"
+		android:elevation="10dp"
 		android:clickable="true"
 		android:focusable="true">
 		<TextView
@@ -41,7 +42,7 @@
 			android:layout_height="wrap_content"
 			android:text="LED"
 			android:textColor="#E0E0FF"
-			android:textSize="13sp"
+			android:textSize="12sp"
 			android:textStyle="bold"
 			android:rotation="-90" />
 	</LinearLayout>
@@ -53,9 +54,11 @@
 		android:layout_gravity="start"
 		android:orientation="vertical"
 		android:background="#12121C"
-		android:elevation="14dp"
+		android:elevation="16dp"
 		android:visibility="gone"
-		android:padding="12dp">
+		android:padding="12dp"
+		android:clickable="true"
+		android:focusable="true">
 		<TextView
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
@@ -85,22 +88,15 @@
 			android:text="Folder: keyLed"
 			android:textColor="#8888AA"
 			android:textSize="12sp"
-			android:paddingTop="8dp"
-			android:paddingBottom="4dp" />
-		<TextView
-			android:layout_width="match_parent"
-			android:layout_height="wrap_content"
-			android:text="Editor"
-			android:textColor="#FFFFFF"
-			android:textSize="14sp"
-			android:paddingTop="10dp" />
+			android:paddingTop="8dp" />
 		<EditText
 			android:id="@+id/ledEditor"
 			android:layout_width="match_parent"
-			android:layout_height="120dp"
+			android:layout_height="100dp"
+			android:layout_marginTop="6dp"
 			android:background="#0A0A12"
 			android:gravity="top|start"
-			android:hint="LED list (chain x y name)…"
+			android:hint="LED list"
 			android:textColor="#CCE0FF"
 			android:textColorHint="#445566"
 			android:padding="8dp"
@@ -111,14 +107,14 @@
 
 	<LinearLayout
 		android:id="@+id/rightPillHandle"
-		android:layout_width="52dp"
-		android:layout_height="150dp"
+		android:layout_width="48dp"
+		android:layout_height="140dp"
 		android:layout_gravity="end|center_vertical"
-		android:layout_marginEnd="6dp"
+		android:layout_marginEnd="4dp"
 		android:orientation="vertical"
 		android:gravity="center"
 		android:background="#1A1A2E"
-		android:elevation="8dp"
+		android:elevation="10dp"
 		android:clickable="true"
 		android:focusable="true">
 		<TextView
@@ -126,7 +122,7 @@
 			android:layout_height="wrap_content"
 			android:text="SOUND"
 			android:textColor="#E0FFE0"
-			android:textSize="13sp"
+			android:textSize="12sp"
 			android:textStyle="bold"
 			android:rotation="90" />
 	</LinearLayout>
@@ -138,9 +134,11 @@
 		android:layout_gravity="end"
 		android:orientation="vertical"
 		android:background="#12121C"
-		android:elevation="14dp"
+		android:elevation="16dp"
 		android:visibility="gone"
-		android:padding="12dp">
+		android:padding="12dp"
+		android:clickable="true"
+		android:focusable="true">
 		<TextView
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
@@ -170,22 +168,15 @@
 			android:text="Folder: sounds"
 			android:textColor="#8888AA"
 			android:textSize="12sp"
-			android:paddingTop="8dp"
-			android:paddingBottom="4dp" />
-		<TextView
-			android:layout_width="match_parent"
-			android:layout_height="wrap_content"
-			android:text="Editor"
-			android:textColor="#FFFFFF"
-			android:textSize="14sp"
-			android:paddingTop="10dp" />
+			android:paddingTop="8dp" />
 		<EditText
 			android:id="@+id/soundEditor"
 			android:layout_width="match_parent"
-			android:layout_height="120dp"
+			android:layout_height="100dp"
+			android:layout_marginTop="6dp"
 			android:background="#0A0A12"
 			android:gravity="top|start"
-			android:hint="Sound mapping (chain x y)…"
+			android:hint="Sound mapping"
 			android:textColor="#CCFFCC"
 			android:textColorHint="#445566"
 			android:padding="8dp"
@@ -202,14 +193,14 @@
 
 	<LinearLayout
 		android:id="@+id/bottomPillHandle"
-		android:layout_width="170dp"
-		android:layout_height="46dp"
+		android:layout_width="160dp"
+		android:layout_height="44dp"
 		android:layout_gravity="bottom|center_horizontal"
-		android:layout_marginBottom="10dp"
+		android:layout_marginBottom="8dp"
 		android:orientation="horizontal"
 		android:gravity="center"
 		android:background="#1A1A2E"
-		android:elevation="8dp"
+		android:elevation="10dp"
 		android:clickable="true"
 		android:focusable="true">
 		<TextView
@@ -217,7 +208,7 @@
 			android:layout_height="wrap_content"
 			android:text="WAVEFORM"
 			android:textColor="#FFE0E0"
-			android:textSize="13sp"
+			android:textSize="12sp"
 			android:textStyle="bold"
 			android:letterSpacing="0.08" />
 	</LinearLayout>
@@ -229,9 +220,11 @@
 		android:layout_gravity="bottom"
 		android:orientation="vertical"
 		android:background="#12121C"
-		android:elevation="16dp"
+		android:elevation="18dp"
 		android:visibility="gone"
-		android:padding="8dp">
+		android:padding="8dp"
+		android:clickable="true"
+		android:focusable="true">
 		<View
 			android:layout_width="40dp"
 			android:layout_height="4dp"
@@ -241,7 +234,7 @@
 		<TextView
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
-			android:text="Waveform / Mark &amp; Cut"
+			android:text="Waveform / Mark & Cut"
 			android:textColor="#FFFFFF"
 			android:textSize="14sp"
 			android:textStyle="bold"
