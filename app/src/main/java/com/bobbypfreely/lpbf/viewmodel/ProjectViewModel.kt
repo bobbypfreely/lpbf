@@ -87,11 +87,48 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 
 	enum class PlaceMode { EDIT, PLAY, HYBRID }
 
+	/** High-level UI mode driven by cogs + top function row. */
+	enum class UiMode { PLAY, EDIT, HYBRID, LIGHTS }
+
 	private val _placeMode = MutableLiveData(PlaceMode.PLAY)
 	val placeMode: LiveData<PlaceMode> = _placeMode
 
+	private val _uiMode = MutableLiveData(UiMode.PLAY)
+	val uiMode: LiveData<UiMode> = _uiMode
+
 	fun setPlaceMode(mode: PlaceMode) {
 		_placeMode.value = mode
+	}
+
+	/** Enter a UI mode: place/light flags + PlaceMode. MainActivity opens matching drawers. */
+	fun enterUiMode(mode: UiMode) {
+		when (mode) {
+			UiMode.PLAY -> {
+				isLightshowTabActive = false
+				isPlaceTabActive = true
+				deselectLightshowSegment()
+				setPlaceMode(PlaceMode.PLAY)
+			}
+			UiMode.EDIT -> {
+				isLightshowTabActive = false
+				isPlaceTabActive = true
+				deselectLightshowSegment()
+				setPlaceMode(PlaceMode.EDIT)
+			}
+			UiMode.HYBRID -> {
+				isLightshowTabActive = false
+				isPlaceTabActive = true
+				deselectLightshowSegment()
+				setPlaceMode(PlaceMode.HYBRID)
+			}
+			UiMode.LIGHTS -> {
+				isPlaceTabActive = false
+				isLightshowTabActive = true
+				setPlaceMode(PlaceMode.PLAY)
+			}
+		}
+		_uiMode.value = mode
+		logDebug("UiMode -> $mode")
 	}
 
 	private val _currentChain = MutableLiveData(0)
@@ -279,10 +316,14 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	var isMarkAndCutTabActive: Boolean = false
 	private var arrowNavIndex: Int? = null
 
+	/**
+	 * Top function row (left→right indices 0..7):
+	 *  0 = PLAY (Up), 1 = MAP/EDIT (Down), 2 = LIGHTS (Left), 3 = HYBRID (Right)
+	 * When a lightshow cut is selected for authoring, 0-3 stay saturation/hue controls.
+	 */
 	override fun onFunctionKeyTouch(f: Int, upDown: Boolean) {
 		if (!upDown) return
-		if (isLightshowTabActive) {
-			if (_selectedLightshowSegment.value == null) return
+		if (isLightshowTabActive && _selectedLightshowSegment.value != null) {
 			when (f) {
 				0 -> stepSaturation(+1)
 				1 -> stepSaturation(-1)
@@ -291,22 +332,11 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 			}
 			return
 		}
-		if (!isMarkAndCutTabActive) return
-		val session = _markingSession.value ?: return
-		if (session.segmentCount == 0) return
 		when (f) {
-			2 -> {
-				val cur = arrowNavIndex
-				val next = if (cur == null) session.segmentCount - 1 else (cur - 1 + session.segmentCount) % session.segmentCount
-				arrowNavIndex = next
-				requestJumpToMark(next)
-			}
-			3 -> {
-				val cur = arrowNavIndex
-				val next = if (cur == null) 0 else (cur + 1) % session.segmentCount
-				arrowNavIndex = next
-				requestJumpToMark(next)
-			}
+			0 -> enterUiMode(UiMode.PLAY)
+			1 -> enterUiMode(UiMode.EDIT)
+			2 -> enterUiMode(UiMode.LIGHTS)
+			3 -> enterUiMode(UiMode.HYBRID)
 		}
 	}
 
@@ -323,7 +353,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		)
 		currentProjectId = null
 		arrowNavIndex = null
-		_placeMode.value = PlaceMode.PLAY
+		enterUiMode(UiMode.PLAY)
 		notifySegmentsChanged()
 	}
 
@@ -358,7 +388,6 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		_capPrompt.value = null
 	}
 
-	/** SEE artifacts/ProjectViewModel.kt for full save/load/createUnipack if this push is incomplete */
 	data class SavedProjectInfo(val id: String, val name: String)
 	data class LoadedProject(val trackFilePath: String, val session: MarkingSession)
 
@@ -373,7 +402,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		cachedFilePath = loaded.trackFilePath
 		_decodedAudio.value = audio
 		_markingSession.value = loaded.session
-		_placeMode.value = PlaceMode.PLAY
+		enterUiMode(UiMode.PLAY)
 		notifySegmentsChanged()
 	}
 
