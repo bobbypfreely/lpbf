@@ -12,13 +12,8 @@ import kotlin.math.min
 
 /**
  * On-screen Launchpad: 8 top function keys + 8x8 main grid + 8 side chain buttons.
- * Matches hardware layout (MK2 / X / Mini style): top row across columns, right column for chains.
- *
- * Logical pad coords stay Unipad convention: x = row (0 top), y = column (0 left).
- * Chain buttons call [PadInputListener.onChainTouch]; top row calls [onFunctionKeyTouch].
- *
- * Forces a square footprint in [onMeasure] so drawers can shrink the area without
- * stretching pads into rectangles.
+ * Pad labels support Unipad-style space-separated cut numbers (multi-line when dense).
+ * Logical pad coords: x = row (0 top), y = column (0 left).
  */
 class VirtualLaunchpadGridView @JvmOverloads constructor(
 	context: Context,
@@ -134,6 +129,63 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 		mainTop = originY + topStrip
 	}
 
+	/** Draw Unipad-style space-separated cut numbers, wrapping to multiple lines. */
+	private fun drawPadLabel(canvas: Canvas, rect: RectF, label: String) {
+		val parts = label.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+		if (parts.isEmpty()) return
+
+		val maxW = rect.width() * 0.92f
+		val maxH = rect.height() * 0.92f
+
+		// Prefer denser text when many notes on one pad
+		var textSize = when {
+			parts.size <= 1 -> cell * 0.34f
+			parts.size <= 4 -> cell * 0.22f
+			parts.size <= 9 -> cell * 0.16f
+			else -> cell * 0.12f
+		}
+		labelPaint.textSize = textSize
+
+		// Pack into lines that fit width
+		fun packLines(size: Float): List<String> {
+			labelPaint.textSize = size
+			val lines = mutableListOf<String>()
+			var line = StringBuilder()
+			for (p in parts) {
+				val candidate = if (line.isEmpty()) p else "$line $p"
+				if (labelPaint.measureText(candidate) <= maxW) {
+					line = StringBuilder(candidate)
+				} else {
+					if (line.isNotEmpty()) lines.add(line.toString())
+					line = StringBuilder(p)
+				}
+			}
+			if (line.isNotEmpty()) lines.add(line.toString())
+			return lines
+		}
+
+		var lines = packLines(textSize)
+		var lineHeight = labelPaint.fontSpacing
+		// Shrink until height fits
+		var guard = 0
+		while (lines.size * lineHeight > maxH && textSize > 6f && guard < 12) {
+			textSize *= 0.88f
+			labelPaint.textSize = textSize
+			lines = packLines(textSize)
+			lineHeight = labelPaint.fontSpacing
+			guard++
+		}
+
+		val totalH = lines.size * lineHeight
+		var y = rect.centerY() - totalH / 2f - (labelPaint.ascent() + labelPaint.descent()) / 2f
+		// Use baseline-friendly layout
+		y = rect.centerY() - totalH / 2f - labelPaint.ascent()
+		for (line in lines) {
+			canvas.drawText(line, rect.centerX(), y, labelPaint)
+			y += lineHeight
+		}
+	}
+
 	override fun onDraw(canvas: Canvas) {
 		super.onDraw(canvas)
 		if (width <= 0 || height <= 0) return
@@ -182,9 +234,7 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 				}
 
 				padLabels[lx to ly]?.let { label ->
-					labelPaint.textSize = cell * 0.35f
-					val textY = rect.centerY() - (labelPaint.descent() + labelPaint.ascent()) / 2
-					canvas.drawText(label, rect.centerX(), textY, labelPaint)
+					drawPadLabel(canvas, rect, label)
 				}
 			}
 		}
