@@ -22,10 +22,10 @@ import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 /**
  * Launchpad's Best Friend -- center = full Launchpad chrome (top 8 + 8x8 + side chains).
  * Left KeyLED / right KeySound / bottom Mark&Cut drawers inset the pad square, never cover it.
- * Pad hits preview the mapped cut via a single reused ExoPlaybackController (less clicky than
- * create/destroy per hit).
+ * Pad hits preview the mapped cut via a single reused ExoPlaybackController.
  *
  * Default place mode is PLAY: after Unipack import, taps fire clips instead of re-assigning.
+ * Pad numbers restart at 1 on each chain (UI only).
  */
 class MainActivity : AppCompatActivity() {
 
@@ -97,12 +97,14 @@ class MainActivity : AppCompatActivity() {
 
 		launchpadGrid.listener = viewModel
 		viewModel.isPlaceTabActive = true
-		// PLAY: after import, pad taps fire clips; switch to EDIT/HYBRID only when mapping
 		viewModel.setPlaceMode(ProjectViewModel.PlaceMode.PLAY)
 
 		findViewById<View>(R.id.leftPillHandle).setOnClickListener { toggleLeft() }
 		findViewById<View>(R.id.rightPillHandle).setOnClickListener { toggleRight() }
 		findViewById<View>(R.id.bottomPillHandle).setOnClickListener { toggleBottom() }
+		findViewById<View?>(R.id.btnCloseLeft)?.setOnClickListener { if (leftOpen) toggleLeft() }
+		findViewById<View?>(R.id.btnCloseRight)?.setOnClickListener { if (rightOpen) toggleRight() }
+		findViewById<View?>(R.id.btnCloseBottom)?.setOnClickListener { if (bottomOpen) toggleBottom() }
 		findViewById<View?>(R.id.btnExportUnipack)?.setOnClickListener { exportUnipack() }
 
 		viewModel.segmentVersion.observe(this) { refreshSideLists() }
@@ -187,13 +189,23 @@ class MainActivity : AppCompatActivity() {
 		soundEditor.setText(soundLines.joinToString("\n"))
 		ledEditor.setText(ledLines.joinToString("\n"))
 
+		// Pad labels: 1..n in placement order ON THIS CHAIN only (not global cut index)
 		launchpadGrid.clearAllPads()
 		launchpadGrid.clearAllHighlights()
 		val litColor = 0xFF00ADB5.toInt()
-		session?.segments()?.forEachIndexed { index, seg ->
-			val b = seg.button ?: return@forEachIndexed
-			if (b.chain != activeChain) return@forEachIndexed
-			launchpadGrid.setPadLit(b.x, b.y, litColor, (index + 1).toString())
+		val firstOnChain = LinkedHashMap<Pair<Int, Int>, Int>()
+		var n = 0
+		session?.segments()?.forEach { seg ->
+			val b = seg.button ?: return@forEach
+			if (b.chain != activeChain) return@forEach
+			val key = b.x to b.y
+			if (key !in firstOnChain) {
+				n += 1
+				firstOnChain[key] = n
+			}
+		}
+		firstOnChain.forEach { (pad, num) ->
+			launchpadGrid.setPadLit(pad.first, pad.second, litColor, num.toString())
 		}
 	}
 
@@ -234,6 +246,7 @@ class MainActivity : AppCompatActivity() {
 		leftDrawer.visibility = if (leftOpen) View.VISIBLE else View.GONE
 		viewModel.isLightshowTabActive = leftOpen && !bottomOpen
 		viewModel.isPlaceTabActive = true
+		findViewById<TextView?>(R.id.leftPillLabel)?.text = if (leftOpen) "CLOSE" else "LED"
 		updateCenterInsets()
 		refreshSideLists()
 	}
@@ -242,6 +255,7 @@ class MainActivity : AppCompatActivity() {
 		rightOpen = !rightOpen
 		rightDrawer.visibility = if (rightOpen) View.VISIBLE else View.GONE
 		viewModel.isPlaceTabActive = true
+		findViewById<TextView?>(R.id.rightPillLabel)?.text = if (rightOpen) "CLOSE" else "SOUND"
 		updateCenterInsets()
 		refreshSideLists()
 	}
@@ -251,6 +265,7 @@ class MainActivity : AppCompatActivity() {
 		bottomDrawer.visibility = if (bottomOpen) View.VISIBLE else View.GONE
 		viewModel.isMarkAndCutTabActive = bottomOpen
 		if (bottomOpen) ensureWaveformFragment()
+		findViewById<TextView?>(R.id.bottomPillLabel)?.text = if (bottomOpen) "CLOSE" else "WAVEFORM"
 		updateCenterInsets()
 	}
 
