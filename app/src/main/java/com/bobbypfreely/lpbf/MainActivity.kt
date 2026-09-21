@@ -12,6 +12,10 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
+import com.bobbypfreely.lpbf.lightshow.LedAnimation
+import com.bobbypfreely.lpbf.lightshow.Pattern
+import com.bobbypfreely.lpbf.lightshow.PatternCompiler
+import com.bobbypfreely.lpbf.manager.LaunchpadColor
 import com.bobbypfreely.lpbf.midi.MidiConnection
 import com.bobbypfreely.lpbf.ui.LightshowFragment
 import com.bobbypfreely.lpbf.ui.MidiControllerBridge
@@ -22,12 +26,10 @@ import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 
 /**
  * Modes:
- *  - PLAY: fire mapped clips; multi-note pads cycle on each press
+ *  - PLAY: fire mapped clips + their light patterns
  *  - EDIT: map next unassigned cut (same pad stacks another note)
- *  - HYBRID: map + preview
- *  - LIGHTS: lightshow edit on main grid
- *
- * Pad labels match Unipad: space-separated global cut numbers on each pad.
+ *  - HYBRID: map + preview sound/lights
+ *  - LIGHTS: lightshow authoring on main grid
  */
 class MainActivity : AppCompatActivity() {
 
@@ -57,7 +59,10 @@ class MainActivity : AppCompatActivity() {
 
 	private var previewController: ExoPlaybackController? = null
 	private val previewStopHandler = Handler(Looper.getMainLooper())
+	private val lightPlayHandler = Handler(Looper.getMainLooper())
 	private var previewLoadedPath: String? = null
+	/** True while a pad light pattern is animating -- skip full pad repaint. */
+	private var lightsPlaying = false
 
 	fun mainLaunchpadGrid(): VirtualLaunchpadGridView = launchpadGrid
 
@@ -131,28 +136,28 @@ class MainActivity : AppCompatActivity() {
 		}
 		viewModel.previewRequest.observe(this) { req ->
 			if (req != null) {
-				if (req.x >= 0 && req.y >= 0) {
+				// Brief hit flash on the pressed pad (skip if lights will own the paint)
+				if (req.pattern == null && req.x >= 0 && req.y >= 0) {
 					val flash = if (req.stackTotal > 1) {
 						"${req.stackIndex + 1}/${req.stackTotal}"
 					} else null
 					launchpadGrid.setPadLit(req.x, req.y, 0xFF00ADB5.toInt(), flash)
-					launchpadGrid.postDelayed({
-						// Restore full Unipad-style label after flash
-						refreshSideLists()
-					}, 220)
+					launchpadGrid.postDelayed({ if (!lightsPlaying) refreshSideLists() }, 220)
 				}
-				playPadPreview(req.startMs, req.endMs)
+				playPadPreview(req.startMs, req.endMs, req.pattern)
 				viewModel.clearPreviewRequest()
 			}
 		}
 		viewModel.uiMode.observe(this) { mode -> applyUiMode(mode) }
 
 		updateCenterInsets()
-		ensureWaveformFragment()
+		// Waveform fragment is created when the drawer first opens -- not at startup --
+		// so isMarkAndCutTabActive stays false until the user opens WAVEFORM.
 	}
 
 	override fun onDestroy() {
 		previewStopHandler.removeCallbacksAndMessages(null)
+		stopLightPlayback()
 		previewController?.release()
 		previewController = null
 		super.onDestroy()
@@ -191,17 +196,89 @@ class MainActivity : AppCompatActivity() {
 		refreshSideLists()
 	}
 
-	private fun playPadPreview(startMs: Int, endMs: Int) {
-		val path = viewModel.cachedFilePath ?: return
-		previewStopHandler.removeCallbacksAndMessages(null)
-		val controller = previewController ?: ExoPlaybackController(this).also { previewController = it }
-		if (previewLoadedPath != path) {
-			controller.load(path)
-			previewLoadedPath = path
+	/** Play the cut's audio and, if present, its light pattern on the main grid + hardware. */
+	private fun playPadPreview(startMs: Int, endMs: Int, pattern: Pattern?) {
+		val durationMs = (endMs - startMs).coerceAtLeast(1)
+
+		// --- audio ---
+		val path = viewModel.cachedFilePath
+		if (path != null) {
+			previewStopHandler.removeCallbacksAndMessages(null)
+			val controller = previewController ?: ExoPlaybackController(this).also { previewController = it }
+			if (previewLoadedPath != path) {
+				controller.load(path)
+				previewLoadedPath = path
+			}
+			controller.playFrom(startMs.coerceAtLeast(0))
+			previewStopHandler.postDelayed({ controller.pause() }, durationMs.toLong())
 		}
-		controller.playFrom(startMs.coerceAtLeast(0))
-		val durationMs = (endMs - startMs).coerceAtLeast(1).toLong()
-		previewStopHandler.postDelayed({ controller.pause() }, durationMs)
+
+		// --- lights ---
+		playPadLights(pattern, durationMs)
+	}
+
+	private fun stopLightPlayback() {
+		lightPlayHandler.removeCallbacksAndMessages(null)
+		lightsPlaying = false
+		try {
+			MidiConnection.driver.sendClearLed()
+		} catch (_: Exception) { }
+	}
+
+	private fun playPadLights(pattern: Pattern?, durationMs: Int) {
+		stopLightPlayback()
+		if (pattern == null || pattern.keyframes.isEmpty() || durationMs <= 0) return
+		if (viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS) return
+
+		lightsPlaying = true
+		val driver = MidiConnection.driver
+		val events = try {
+			PatternCompiler.compile(pattern, durationMs)
+		} catch (e: Exception) {
+			viewModel.logDebug("Light play compile failed: ${e.message}")
+			lightsPlaying = false
+			return
+		}
+
+		var tMs = 0
+		for (ev in events) {
+			when (ev) {
+				is LedAnimation.LedEvent.Delay -> tMs += ev.delay
+				is LedAnimation.LedEvent.On -> {
+					val at = tMs.toLong()
+					val x = ev.x
+					val y = ev.y
+					val vel = ev.velocity.coerceIn(0, 127)
+					if (x < 0 || y < 0) continue
+					lightPlayHandler.postDelayed({
+						val argb = LaunchpadColor.ARGB.getOrElse(vel) { LaunchpadColor.ARGB[0] }.toInt()
+						// Force opaque if palette entry is translucent
+						val paint = if ((argb ushr 24) == 0) 0xFF000000.toInt() or (argb and 0x00FFFFFF) else argb
+						launchpadGrid.setPadLit(x, y, paint)
+						try { driver.sendPadLed(x, y, vel) } catch (_: Exception) { }
+					}, at)
+				}
+				is LedAnimation.LedEvent.Off -> {
+					val at = tMs.toLong()
+					val x = ev.x
+					val y = ev.y
+					if (x < 0 || y < 0) continue
+					lightPlayHandler.postDelayed({
+						launchpadGrid.clearPad(x, y)
+						try { driver.sendPadLed(x, y, 0) } catch (_: Exception) { }
+					}, at)
+				}
+				else -> { /* Chain etc. ignored in pad preview */ }
+			}
+		}
+
+		// Restore pad labels after the pattern finishes
+		lightPlayHandler.postDelayed({
+			lightsPlaying = false
+			if (viewModel.uiMode.value != ProjectViewModel.UiMode.LIGHTS) {
+				refreshSideLists()
+			}
+		}, durationMs.toLong() + 40)
 	}
 
 	private fun ensureWaveformFragment() {
@@ -251,9 +328,8 @@ class MainActivity : AppCompatActivity() {
 		ledEditor.setText(ledLines.joinToString("\n"))
 
 		if (viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS) return
+		if (lightsPlaying) return // don't stomp an in-flight light pattern
 
-		// Unipad-style labels: every global cut index on that pad, space-separated
-		// (e.g. "1 6 8 106"). Playback still cycles stack order.
 		launchpadGrid.clearAllPads()
 		launchpadGrid.clearAllHighlights()
 		val litColor = 0xFF00ADB5.toInt()
