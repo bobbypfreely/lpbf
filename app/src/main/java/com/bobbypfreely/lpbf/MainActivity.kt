@@ -26,6 +26,8 @@ import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
  *  - EDIT: map next unassigned cut (same pad stacks another note)
  *  - HYBRID: map + preview
  *  - LIGHTS: lightshow edit on main grid
+ *
+ * Pad labels match Unipad: space-separated global cut numbers on each pad.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -134,7 +136,10 @@ class MainActivity : AppCompatActivity() {
 						"${req.stackIndex + 1}/${req.stackTotal}"
 					} else null
 					launchpadGrid.setPadLit(req.x, req.y, 0xFF00ADB5.toInt(), flash)
-					launchpadGrid.postDelayed({ launchpadGrid.clearPad(req.x, req.y) }, 200)
+					launchpadGrid.postDelayed({
+						// Restore full Unipad-style label after flash
+						refreshSideLists()
+					}, 220)
 				}
 				playPadPreview(req.startMs, req.endMs)
 				viewModel.clearPreviewRequest()
@@ -247,26 +252,19 @@ class MainActivity : AppCompatActivity() {
 
 		if (viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS) return
 
-		// Pad labels: play-order 1..n on this chain; multi-note pads show "NxM" (order x stack)
+		// Unipad-style labels: every global cut index on that pad, space-separated
+		// (e.g. "1 6 8 106"). Playback still cycles stack order.
 		launchpadGrid.clearAllPads()
 		launchpadGrid.clearAllHighlights()
 		val litColor = 0xFF00ADB5.toInt()
-		val firstOnChain = LinkedHashMap<Pair<Int, Int>, Int>()
-		val stackOnChain = HashMap<Pair<Int, Int>, Int>()
-		var n = 0
-		session?.segments()?.forEach { seg ->
-			val b = seg.button ?: return@forEach
-			if (b.chain != activeChain) return@forEach
-			val key = b.x to b.y
-			if (key !in firstOnChain) {
-				n += 1
-				firstOnChain[key] = n
-			}
-			stackOnChain[key] = (stackOnChain[key] ?: 0) + 1
+		val padCuts = LinkedHashMap<Pair<Int, Int>, MutableList<Int>>()
+		session?.segments()?.forEachIndexed { i, seg ->
+			val b = seg.button ?: return@forEachIndexed
+			if (b.chain != activeChain) return@forEachIndexed
+			padCuts.getOrPut(b.x to b.y) { mutableListOf() }.add(i + 1)
 		}
-		firstOnChain.forEach { (pad, num) ->
-			val stack = stackOnChain[pad] ?: 1
-			val label = if (stack > 1) "${num}x$stack" else num.toString()
+		padCuts.forEach { (pad, cuts) ->
+			val label = cuts.joinToString(" ")
 			launchpadGrid.setPadLit(pad.first, pad.second, litColor, label)
 		}
 	}
