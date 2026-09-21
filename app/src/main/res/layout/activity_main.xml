@@ -17,15 +17,53 @@
 		android:layout_marginBottom="56dp"
 		android:padding="4dp">
 
-		<com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
-			android:id="@+id/mainLaunchpadGrid"
+		<LinearLayout
 			android:layout_width="match_parent"
 			android:layout_height="match_parent"
-			android:layout_gravity="center"
-			android:background="#0B0B12" />
+			android:orientation="vertical">
+
+			<!-- Mode bar: label + hybrid cog (main) -->
+			<LinearLayout
+				android:id="@+id/modeBar"
+				android:layout_width="match_parent"
+				android:layout_height="36dp"
+				android:orientation="horizontal"
+				android:gravity="center_vertical"
+				android:paddingStart="8dp"
+				android:paddingEnd="8dp">
+				<TextView
+					android:id="@+id/modeLabel"
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_weight="1"
+					android:text="PLAY"
+					android:textColor="#00ADB5"
+					android:textSize="13sp"
+					android:textStyle="bold"
+					android:letterSpacing="0.06" />
+				<TextView
+					android:id="@+id/btnModeHybrid"
+					android:layout_width="40dp"
+					android:layout_height="36dp"
+					android:gravity="center"
+					android:text="⚙"
+					android:textColor="#E0E0FF"
+					android:textSize="20sp"
+					android:contentDescription="Hybrid mode"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:clickable="true"
+					android:focusable="true" />
+			</LinearLayout>
+
+			<com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
+				android:id="@+id/mainLaunchpadGrid"
+				android:layout_width="match_parent"
+				android:layout_height="0dp"
+				android:layout_weight="1"
+				android:background="#0B0B12" />
+		</LinearLayout>
 	</FrameLayout>
 
-	<!-- Pills sit above drawers (elevation 24) so they remain a close/open toggle -->
 	<LinearLayout
 		android:id="@+id/leftPillHandle"
 		android:layout_width="48dp"
@@ -75,6 +113,18 @@
 				android:textSize="18sp"
 				android:textStyle="bold" />
 			<TextView
+				android:id="@+id/btnModeLights"
+				android:layout_width="40dp"
+				android:layout_height="40dp"
+				android:gravity="center"
+				android:text="⚙"
+				android:textColor="#E0E0FF"
+				android:textSize="20sp"
+				android:contentDescription="Lights edit mode"
+				android:background="?attr/selectableItemBackgroundBorderless"
+				android:clickable="true"
+				android:focusable="true" />
+			<TextView
 				android:id="@+id/btnCloseLeft"
 				android:layout_width="40dp"
 				android:layout_height="40dp"
@@ -86,10 +136,24 @@
 				android:clickable="true"
 				android:focusable="true" />
 		</LinearLayout>
-		<ScrollView
+		<TextView
+			android:id="@+id/lightsModeHint"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Tap ⚙ for lights edit. Top-row Left also enters lights."
+			android:textColor="#8888AA"
+			android:textSize="11sp"
+			android:paddingBottom="6dp" />
+		<FrameLayout
+			android:id="@+id/lightshowPlaceholder"
 			android:layout_width="match_parent"
 			android:layout_height="0dp"
 			android:layout_weight="1"
+			android:background="#0A0A12" />
+		<ScrollView
+			android:id="@+id/ledListScroll"
+			android:layout_width="match_parent"
+			android:layout_height="80dp"
 			android:background="#0A0A12">
 			<TextView
 				android:id="@+id/ledFolderSummary"
@@ -101,18 +165,11 @@
 				android:textSize="12sp"
 				android:fontFamily="monospace" />
 		</ScrollView>
-		<TextView
-			android:layout_width="match_parent"
-			android:layout_height="wrap_content"
-			android:text="Folder: keyLed"
-			android:textColor="#8888AA"
-			android:textSize="12sp"
-			android:paddingTop="8dp" />
 		<EditText
 			android:id="@+id/ledEditor"
 			android:layout_width="match_parent"
-			android:layout_height="100dp"
-			android:layout_marginTop="6dp"
+			android:layout_height="72dp"
+			android:layout_marginTop="4dp"
 			android:background="#0A0A12"
 			android:gravity="top|start"
 			android:hint="LED list"
@@ -173,6 +230,18 @@
 				android:textSize="18sp"
 				android:textStyle="bold" />
 			<TextView
+				android:id="@+id/btnModeMap"
+				android:layout_width="40dp"
+				android:layout_height="40dp"
+				android:gravity="center"
+				android:text="⚙"
+				android:textColor="#E0FFE0"
+				android:textSize="20sp"
+				android:contentDescription="Map / edit mode"
+				android:background="?attr/selectableItemBackgroundBorderless"
+				android:clickable="true"
+				android:focusable="true" />
+			<TextView
 				android:id="@+id/btnCloseRight"
 				android:layout_width="40dp"
 				android:layout_height="40dp"
@@ -184,6 +253,13 @@
 				android:clickable="true"
 				android:focusable="true" />
 		</LinearLayout>
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="⚙ enters map (EDIT). Top-row Down also maps."
+			android:textColor="#8888AA"
+			android:textSize="11sp"
+			android:paddingBottom="6dp" />
 		<ScrollView
 			android:layout_width="match_parent"
 			android:layout_height="0dp"
@@ -199,13 +275,6 @@
 				android:textSize="12sp"
 				android:fontFamily="monospace" />
 		</ScrollView>
-		<TextView
-			android:layout_width="match_parent"
-			android:layout_height="wrap_content"
-			android:text="Folder: sounds"
-			android:textColor="#8888AA"
-			android:textSize="12sp"
-			android:paddingTop="8dp" />
 		<EditText
 			android:id="@+id/soundEditor"
 			android:layout_width="match_parent"
