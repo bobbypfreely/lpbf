@@ -10,6 +10,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import com.bobbypfreely.lpbf.MainActivity
 import com.bobbypfreely.lpbf.R
 import com.bobbypfreely.lpbf.audio.AudioPlaybackController
 import com.bobbypfreely.lpbf.lightshow.Keyframe
@@ -20,27 +21,9 @@ import com.bobbypfreely.lpbf.midi.MidiConnection
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
 
 /**
- * Lightshow: assigns each provisional segment (from Mark and Cut, mapped to a button on
- * Place) its own LED Pattern, one per cut -- same relationship audio has to a button.
- * Nothing is compiled to keyLED events here; that only happens at Finalize, mirroring
- * how Splice doesn't cut audio until you commit there either.
- *
- * Two modes:
- *  - OVERVIEW (nothing selected): grid border-highlights every mapped pad on the current
- *    chain. Tapping one selects it for editing -- tapping again cycles through any
- *    stacked cuts on that same pad, same convention Place uses for preview cycling.
- *  - EDIT (a cut is selected): the 8 chain buttons become a hardware color picker
- *    (see LightshowColorWheel) -- Up/Down steps saturation, Left/Right also steps hue.
- *    Tapping any pad on the grid places a light event there at the current authoring
- *    time, using the current color, for the current duration. Play previews the whole
- *    assembled sequence -- virtual grid, real hardware if connected, AND this cut's
- *    actual audio seeked to its own startMs -- so you can hear whether the lights and
- *    sound line up, not just watch the lights alone. Save compiles the event list into
- *    a duration-agnostic Pattern and stores it on the segment.
- *
- * Both physical Launchpad presses and on-screen grid taps route through the same
- * ProjectViewModel.onPadDown/onChainTouch/onFunctionKeyTouch Place already uses --
- * mode logic (select vs. place-event) lives once, in the ViewModel.
+ * Lightshow authoring UI hosted in the LED drawer.
+ * Pad interaction and LED paint use the **main** VirtualLaunchpadGridView in MainActivity
+ * (this fragment's grid is gone/hidden). Stacked cuts on the same pad cycle on re-tap.
  */
 class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
@@ -66,26 +49,21 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 	private val hardwareButtons = mutableListOf<Button>()
 	private val previewHandler = Handler(Looper.getMainLooper())
 
-	/** Fixed duration every placed event gets. Not user-editable -- authoring is
-	 * pad-then-time only, matching how a real Launchpad performance lightshow is
-	 * built (fire pads, dial in when). Revisit if per-event length is ever needed. */
 	private val FIXED_DURATION_MS = 200
 
-	/** Built fresh against whichever DecodedAudio is current each time Play is pressed --
-	 * cheap to construct, and this avoids holding a stale reference across a project
-	 * switch. Plays the real decoded track (same PCM Mark and Cut and Place already
-	 * share), seeked to this cut's own startMs, so Play previews audio and lights
-	 * together instead of lights alone. */
 	private var audioPreview: AudioPlaybackController? = null
-
-	// ---- Local editing state for whichever cut is currently selected. Reset whenever
-	// the ViewModel's selection changes. Nothing here is durable until Save. ----
 
 	private data class EditEvent(val x: Int, val y: Int, val velocity: Int, val startMs: Int, val durationMs: Int)
 
 	private val events = mutableListOf<EditEvent>()
 	private var authoringTimeMs = 0
 	private var loadedForSegment: Int? = null
+
+	/** Prefer the center Launchpad; fall back to the (hidden) local grid. */
+	private fun paintGrid(): VirtualLaunchpadGridView {
+		val main = (activity as? MainActivity)?.mainLaunchpadGrid()
+		return main ?: grid
+	}
 
 	override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
 		super.onViewCreated(view, savedInstanceState)
@@ -108,14 +86,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		grid = view.findViewById(R.id.lightshowGrid)
 
 		buildHardwareButtonRow()
-
-		// Same principle as Place: virtual grid taps and physical Launchpad presses both
-		// funnel through ProjectViewModel.onPadDown, so this fragment never has to know
-		// which one fired.
-		grid.listener = object : PadInputListener {
-			override fun onPadDown(x: Int, y: Int) = viewModel.onPadDown(x, y)
-			override fun onPadUp(x: Int, y: Int) {}
-		}
 
 		timeMinus1000.setOnClickListener { adjustTime(-1000) }
 		timeMinus100.setOnClickListener { adjustTime(-100) }
@@ -153,27 +123,29 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
 	override fun onResume() {
 		super.onResume()
-		viewModel.isLightshowTabActive = true
+		// Flag is owned by ProjectViewModel.enterUiMode(LIGHTS); do not fight it here.
+		if (viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS) {
+			viewModel.isLightshowTabActive = true
+		}
+		refresh()
 	}
 
 	override fun onPause() {
-		super.onPause()
-		viewModel.isLightshowTabActive = false
 		stopPreview()
+		// Leave isLightshowTabActive alone -- leaving the drawer mid-LIGHTS still uses main pad.
+		super.onPause()
 	}
-
-	// ---- Dual-purpose 8-button row: chain selector in overview, color picker in edit ----
 
 	private fun buildHardwareButtonRow() {
 		buttonRow.removeAllViews()
 		hardwareButtons.clear()
 		for (slot in 0 until 8) {
 			val button = Button(requireContext()).apply {
-				textSize = 11f
+				textSize = 10f
 				layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-					marginEnd = if (slot < 7) 4 else 0
+					marginEnd = if (slot < 7) 2 else 0
 				}
-				setPadding(0, 8, 0, 8)
+				setPadding(0, 6, 0, 6)
 				setOnClickListener {
 					if (viewModel.selectedLightshowSegment.value != null) {
 						viewModel.setColorHueSlot(slot)
@@ -193,7 +165,7 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		val activeHue = viewModel.colorHueSlot.value ?: 0
 
 		hardwareButtons.forEachIndexed { i, button ->
-			button.text = if (editing) LightshowColorWheel.SLOT_NAMES[i] else (i + 1).toString()
+			button.text = if (editing) LightshowColorWheel.SLOT_NAMES[i].take(3) else (i + 1).toString()
 			val isActive = if (editing) i == activeHue else i == activeChain
 			if (isActive) {
 				button.setBackgroundColor(Color.parseColor("#00ADB5"))
@@ -208,8 +180,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 	private fun refreshVelocityText() {
 		velocityText.text = "Velocity: ${viewModel.currentColorVelocity()}"
 	}
-
-	// ---- Selection changes: enter/exit edit mode, load any existing pattern back in ----
 
 	private fun onSelectionChanged(segmentIndex: Int?) {
 		editControls.visibility = if (segmentIndex != null) View.VISIBLE else View.GONE
@@ -237,10 +207,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		refresh()
 	}
 
-	/** Reverses PatternCompiler's fractional scaling back into editable ms events by
-	 * pairing each On keyframe with the next Off keyframe at the same (x,y). Best-effort:
-	 * a hand-authored or built-in Pattern that doesn't cleanly pair on/off per pad will
-	 * just show fewer events than it technically contains, not crash. */
 	private fun reconstructEvents(pattern: Pattern, durationMs: Int): List<EditEvent> {
 		val sorted = pattern.keyframes.sortedBy { it.t }
 		val result = mutableListOf<EditEvent>()
@@ -256,14 +222,10 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		return result.sortedBy { it.startMs }
 	}
 
-	// ---- Time/duration steppers ----
-
 	private fun adjustTime(deltaMs: Int) {
 		authoringTimeMs = (authoringTimeMs + deltaMs).coerceAtLeast(0)
 		timeText.text = "Time: ${authoringTimeMs}ms"
 	}
-
-	// ---- Placing / removing events ----
 
 	private fun placeEvent(x: Int, y: Int, velocity: Int) {
 		events.add(EditEvent(x, y, velocity, authoringTimeMs, FIXED_DURATION_MS))
@@ -277,26 +239,23 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		refresh()
 	}
 
-	// ---- Preview playback ----
-
 	private fun playPreview() {
 		stopPreview()
-		grid.clearAllPads()
+		val g = paintGrid()
+		g.clearAllPads()
 		val driver = MidiConnection.driver
 		events.forEach { ev ->
 			val argb = LaunchpadColor.ARGB.getOrElse(ev.velocity) { LaunchpadColor.ARGB[0] }.toInt()
 			previewHandler.postDelayed({
-				grid.setPadLit(ev.x, ev.y, argb)
+				g.setPadLit(ev.x, ev.y, argb)
 				driver.sendPadLed(ev.x, ev.y, ev.velocity)
 			}, ev.startMs.toLong())
 			previewHandler.postDelayed({
-				grid.clearPad(ev.x, ev.y)
+				g.clearPad(ev.x, ev.y)
 				driver.sendPadLed(ev.x, ev.y, 0)
 			}, (ev.startMs + ev.durationMs).toLong())
 		}
 
-		// Play the real cut's audio alongside the lights, so you can hear whether they
-		// line up -- not just watch the lights in isolation.
 		val audio = viewModel.decodedAudio.value
 		val segmentIndex = viewModel.selectedLightshowSegment.value
 		val session = viewModel.markingSession.value
@@ -316,8 +275,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		audioPreview?.stop()
 		audioPreview = null
 	}
-
-	// ---- Save: compile the event list into a duration-agnostic Pattern ----
 
 	private fun saveAndDeselect() {
 		stopPreview()
@@ -344,41 +301,48 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		viewModel.deselectLightshowSegment()
 	}
 
-	// ---- Rendering ----
-
 	private fun refresh() {
 		val session = viewModel.markingSession.value
 		val activeChain = viewModel.currentChain.value ?: 0
 		val selected = viewModel.selectedLightshowSegment.value
 		refreshHardwareButtonHighlight()
 
+		val g = paintGrid()
 		if (session == null || session.segmentCount == 0) {
 			statusText.text = "Import and mark a track first."
 			eventListContainer.removeAllViews()
-			grid.clearAllPads()
-			grid.clearAllHighlights()
+			g.clearAllPads()
+			g.clearAllHighlights()
 			return
 		}
 
 		if (selected != null) {
-			renderEditMode(session, selected)
+			renderEditMode(session, selected, g)
 		} else {
-			renderOverview(session, activeChain)
+			renderOverview(session, activeChain, g)
 		}
 	}
 
-	private fun renderOverview(session: com.bobbypfreely.lpbf.marking.MarkingSession, activeChain: Int) {
+	private fun renderOverview(
+		session: com.bobbypfreely.lpbf.marking.MarkingSession,
+		activeChain: Int,
+		g: VirtualLaunchpadGridView,
+	) {
 		val segments = session.segments()
 		val mappedOnChain = segments.filter { it.button?.chain == activeChain }
-		statusText.text = if (mappedOnChain.isEmpty()) {
-			"Chain ${activeChain + 1} -- no cuts mapped here yet. Map cuts on Place first."
-		} else {
-			"Chain ${activeChain + 1} -- tap a highlighted pad to edit its lightshow."
+		val stackHint = mappedOnChain.groupBy { it.button!!.x to it.button!!.y }.count { it.value.size > 1 }
+		statusText.text = when {
+			mappedOnChain.isEmpty() ->
+				"Chain ${activeChain + 1} -- no cuts mapped. Map on SOUND first."
+			stackHint > 0 ->
+				"Chain ${activeChain + 1} -- tap pad to edit. Re-tap cycles stacked cuts ($stackHint pads)."
+			else ->
+				"Chain ${activeChain + 1} -- tap a highlighted pad to edit its lightshow."
 		}
 
 		eventListContainer.removeAllViews()
-		grid.clearAllPads()
-		grid.clearAllHighlights()
+		g.clearAllPads()
+		g.clearAllHighlights()
 
 		val highlightColor = Color.parseColor("#00ADB5")
 		val seenPads = HashSet<Pair<Int, Int>>()
@@ -387,44 +351,50 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 			if (button != null && button.chain == activeChain) {
 				val key = button.x to button.y
 				if (seenPads.add(key)) {
-					grid.setPadHighlighted(button.x, button.y, highlightColor)
+					g.setPadHighlighted(button.x, button.y, highlightColor)
 				}
 				if (seg.lightPattern != null) {
-					// A cut that already has a lightshow gets a soft fill so it's visible
-					// at a glance which mapped pads still need one.
-					grid.setPadLit(button.x, button.y, Color.parseColor("#33334A"))
+					g.setPadLit(button.x, button.y, Color.parseColor("#33334A"))
 				}
 			}
 		}
 	}
 
-	private fun renderEditMode(session: com.bobbypfreely.lpbf.marking.MarkingSession, segmentIndex: Int) {
+	private fun renderEditMode(
+		session: com.bobbypfreely.lpbf.marking.MarkingSession,
+		segmentIndex: Int,
+		g: VirtualLaunchpadGridView,
+	) {
 		val segment = session.segment(segmentIndex)
 		val button = segment.button
+		val stackCount = if (button != null) {
+			session.segments().count { it.button == button }
+		} else 1
+		val stackPart = if (stackCount > 1) "  [${stackCount} on pad]" else ""
 		statusText.text = if (button != null) {
-			"Editing cut ${segmentIndex + 1} (${segment.durationMs}ms) -- pad (${button.x}, ${button.y})"
+			"Editing cut ${segmentIndex + 1} (${segment.durationMs}ms) pad (${button.x + 1},${button.y + 1})$stackPart"
 		} else {
 			"Editing cut ${segmentIndex + 1} (${segment.durationMs}ms)"
 		}
 		timeText.text = "Time: ${authoringTimeMs}ms"
 
-		grid.clearAllPads()
-		grid.clearAllHighlights()
+		g.clearAllPads()
+		g.clearAllHighlights()
 		if (button != null) {
-			grid.setPadHighlighted(button.x, button.y, Color.parseColor("#FFFFFF"))
+			g.setPadHighlighted(button.x, button.y, Color.parseColor("#FFFFFF"))
 		}
 		events.forEach { ev ->
 			val argb = LaunchpadColor.ARGB.getOrElse(ev.velocity) { LaunchpadColor.ARGB[0] }.toInt()
-			grid.setPadLit(ev.x, ev.y, argb)
+			g.setPadLit(ev.x, ev.y, argb)
 		}
 
 		eventListContainer.removeAllViews()
 		events.forEachIndexed { i, ev ->
 			val row = TextView(requireContext()).apply {
-				textSize = 13f
-				setPadding(8, 8, 8, 8)
+				textSize = 12f
+				setPadding(6, 6, 6, 6)
 				setTextColor(Color.parseColor("#DDDDDD"))
-				text = "${i + 1}. pad (${ev.x},${ev.y}) vel=${ev.velocity} -- ${ev.startMs}-${ev.startMs + ev.durationMs}ms"
+				text = "${i + 1}. (${ev.x + 1},${ev.y + 1}) v=${ev.velocity} ${ev.startMs}-${ev.startMs + ev.durationMs}ms"
 				setOnLongClickListener {
 					removeEvent(ev)
 					true
@@ -434,10 +404,10 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		}
 		if (events.isEmpty()) {
 			val hint = TextView(requireContext()).apply {
-				textSize = 12f
-				setPadding(8, 8, 8, 8)
+				textSize = 11f
+				setPadding(6, 6, 6, 6)
 				setTextColor(Color.parseColor("#888888"))
-				text = "Pick a color below, then tap pads on the grid to place events. Long-press an event here to remove it."
+				text = "Pick a color, set Time, tap main pads to place. Long-press event to remove."
 			}
 			eventListContainer.addView(hint)
 		}
