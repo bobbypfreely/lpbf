@@ -57,6 +57,9 @@ class MainActivity : AppCompatActivity() {
 	private val previewStopHandler = Handler(Looper.getMainLooper())
 	private var previewLoadedPath: String? = null
 
+	/** Used by LightshowFragment to paint/preview on the center pad. */
+	fun mainLaunchpadGrid(): VirtualLaunchpadGridView = launchpadGrid
+
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
 		CrashLogger.install(applicationContext)
@@ -109,7 +112,6 @@ class MainActivity : AppCompatActivity() {
 		findViewById<View?>(R.id.btnCloseBottom)?.setOnClickListener { if (bottomOpen) toggleBottom() }
 		findViewById<View?>(R.id.btnExportUnipack)?.setOnClickListener { exportUnipack() }
 
-		// Cogs
 		findViewById<View?>(R.id.btnModeHybrid)?.setOnClickListener {
 			viewModel.enterUiMode(ProjectViewModel.UiMode.HYBRID)
 		}
@@ -149,14 +151,13 @@ class MainActivity : AppCompatActivity() {
 		super.onDestroy()
 	}
 
-	/** Open matching drawers and update mode label. */
 	private fun applyUiMode(mode: ProjectViewModel.UiMode?) {
 		val m = mode ?: ProjectViewModel.UiMode.PLAY
 		modeLabel.text = when (m) {
-			ProjectViewModel.UiMode.PLAY -> "PLAY  ·  top Up"
-			ProjectViewModel.UiMode.EDIT -> "MAP  ·  top Down"
-			ProjectViewModel.UiMode.HYBRID -> "HYBRID  ·  top Right"
-			ProjectViewModel.UiMode.LIGHTS -> "LIGHTS  ·  top Left"
+			ProjectViewModel.UiMode.PLAY -> "PLAY  |  top 1"
+			ProjectViewModel.UiMode.EDIT -> "MAP  |  top 2"
+			ProjectViewModel.UiMode.HYBRID -> "HYBRID  |  top 4"
+			ProjectViewModel.UiMode.LIGHTS -> "LIGHTS  |  top 3"
 		}
 		modeLabel.setTextColor(
 			when (m) {
@@ -168,16 +169,12 @@ class MainActivity : AppCompatActivity() {
 		)
 
 		when (m) {
-			ProjectViewModel.UiMode.PLAY -> {
-				// stay put on drawers; just leave lights if we were there
-			}
+			ProjectViewModel.UiMode.PLAY -> { }
 			ProjectViewModel.UiMode.EDIT -> {
 				if (!rightOpen) toggleRight()
 				if (leftOpen) toggleLeft()
 			}
-			ProjectViewModel.UiMode.HYBRID -> {
-				// main work on pad; optional sound open
-			}
+			ProjectViewModel.UiMode.HYBRID -> { }
 			ProjectViewModel.UiMode.LIGHTS -> {
 				if (!leftOpen) toggleLeft()
 				if (rightOpen) toggleRight()
@@ -246,7 +243,7 @@ class MainActivity : AppCompatActivity() {
 		soundEditor.setText(soundLines.joinToString("\n"))
 		ledEditor.setText(ledLines.joinToString("\n"))
 
-		// Don't stomp lightshow edit paints when in LIGHTS mode
+		// LightshowFragment owns pad paint while in LIGHTS
 		if (viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS) return
 
 		launchpadGrid.clearAllPads()
