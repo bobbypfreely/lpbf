@@ -86,8 +86,6 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	}
 
 	enum class PlaceMode { EDIT, PLAY, HYBRID }
-
-	/** High-level UI mode driven by cogs + top function row. */
 	enum class UiMode { PLAY, EDIT, HYBRID, LIGHTS }
 
 	private val _placeMode = MutableLiveData(PlaceMode.PLAY)
@@ -100,7 +98,6 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		_placeMode.value = mode
 	}
 
-	/** Enter a UI mode: place/light flags + PlaceMode. MainActivity opens matching drawers. */
 	fun enterUiMode(mode: UiMode) {
 		when (mode) {
 			UiMode.PLAY -> {
@@ -140,7 +137,17 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 
 	var isPlaceTabActive: Boolean = false
 
-	data class PreviewRequest(val startMs: Int, val endMs: Int, val pattern: Pattern? = null, val x: Int = -1, val y: Int = -1)
+	data class PreviewRequest(
+		val startMs: Int,
+		val endMs: Int,
+		val pattern: Pattern? = null,
+		val x: Int = -1,
+		val y: Int = -1,
+		/** 0-based index within multi-note stack on this pad */
+		val stackIndex: Int = 0,
+		/** total notes stacked on this pad (1 = single) */
+		val stackTotal: Int = 1,
+	)
 	private val _previewRequest = MutableLiveData<PreviewRequest?>(null)
 	val previewRequest: LiveData<PreviewRequest?> = _previewRequest
 
@@ -187,6 +194,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		}
 	}
 
+	/** MAP: next unmapped cut goes on this pad. Same pad again = another note stacked (Unipad multi keySound). */
 	fun assignNextSegment(x: Int, y: Int) {
 		val session = _markingSession.value ?: return
 		if (session.isSpliced) return
@@ -196,8 +204,10 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 			return
 		}
 		val chain = _currentChain.value ?: 0
-		session.reassignButton(nextIndex, ButtonRef(chain = chain, x = x, y = y))
-		logDebug("Assigned cut ${nextIndex + 1} -> chain $chain pad ($x,$y)")
+		val button = ButtonRef(chain = chain, x = x, y = y)
+		session.reassignButton(nextIndex, button)
+		val stack = session.segments().count { it.button == button }
+		logDebug("Assigned cut ${nextIndex + 1} -> chain $chain pad ($x,$y) [stack=$stack]")
 		notifySegmentsChanged()
 	}
 
@@ -210,13 +220,19 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 			return
 		}
 		val chain = _currentChain.value ?: 0
-		session.reassignButton(nextIndex, ButtonRef(chain = chain, x = x, y = y))
+		val button = ButtonRef(chain = chain, x = x, y = y)
+		session.reassignButton(nextIndex, button)
 		notifySegmentsChanged()
 		val seg = session.segment(nextIndex)
-		logDebug("Assigned + previewing cut ${nextIndex + 1} -> chain $chain pad ($x,$y)")
-		_previewRequest.value = PreviewRequest(seg.startMs, seg.endMs, seg.lightPattern, x, y)
+		val stack = session.segments().count { it.button == button }
+		logDebug("Assigned + preview cut ${nextIndex + 1} -> pad ($x,$y) [stack=$stack]")
+		_previewRequest.value = PreviewRequest(
+			seg.startMs, seg.endMs, seg.lightPattern, x, y,
+			stackIndex = stack - 1, stackTotal = stack,
+		)
 	}
 
+	/** PLAY: cycle through every cut stacked on this pad (Unipad multi-note behavior). */
 	private fun previewPad(x: Int, y: Int) {
 		val session = _markingSession.value ?: return
 		val button = ButtonRef(chain = _currentChain.value ?: 0, x = x, y = y)
@@ -228,8 +244,11 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		val cycle = previewCycleIndex.getOrDefault(button, 0) % matches.size
 		previewCycleIndex[button] = cycle + 1
 		val (segIndex, seg) = matches[cycle]
-		logDebug("Preview pad ($x,$y): cut ${segIndex + 1} (${seg.startMs}-${seg.endMs}ms)")
-		_previewRequest.value = PreviewRequest(seg.startMs, seg.endMs, seg.lightPattern, x, y)
+		logDebug("PLAY pad ($x,$y): note ${cycle + 1}/${matches.size} = cut ${segIndex + 1} (${seg.startMs}-${seg.endMs}ms)")
+		_previewRequest.value = PreviewRequest(
+			seg.startMs, seg.endMs, seg.lightPattern, x, y,
+			stackIndex = cycle, stackTotal = matches.size,
+		)
 	}
 
 	var isLightshowTabActive: Boolean = false
@@ -251,7 +270,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		lightshowCycleIndex[button] = cycle + 1
 		val (segIndex, _) = matches[cycle]
 		_selectedLightshowSegment.value = segIndex
-		logDebug("Lightshow pad ($x,$y): editing cut ${segIndex + 1}")
+		logDebug("Lightshow pad ($x,$y): editing cut ${segIndex + 1} (note ${cycle + 1}/${matches.size})")
 	}
 
 	fun deselectLightshowSegment() {
@@ -316,11 +335,6 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	var isMarkAndCutTabActive: Boolean = false
 	private var arrowNavIndex: Int? = null
 
-	/**
-	 * Top function row (left→right indices 0..7):
-	 *  0 = PLAY (Up), 1 = MAP/EDIT (Down), 2 = LIGHTS (Left), 3 = HYBRID (Right)
-	 * When a lightshow cut is selected for authoring, 0-3 stay saturation/hue controls.
-	 */
 	override fun onFunctionKeyTouch(f: Int, upDown: Boolean) {
 		if (!upDown) return
 		if (isLightshowTabActive && _selectedLightshowSegment.value != null) {
@@ -353,6 +367,8 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		)
 		currentProjectId = null
 		arrowNavIndex = null
+		previewCycleIndex.clear()
+		lightshowCycleIndex.clear()
 		enterUiMode(UiMode.PLAY)
 		notifySegmentsChanged()
 	}
@@ -402,6 +418,8 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		cachedFilePath = loaded.trackFilePath
 		_decodedAudio.value = audio
 		_markingSession.value = loaded.session
+		previewCycleIndex.clear()
+		lightshowCycleIndex.clear()
 		enterUiMode(UiMode.PLAY)
 		notifySegmentsChanged()
 	}
