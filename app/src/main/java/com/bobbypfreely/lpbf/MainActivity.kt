@@ -13,6 +13,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import com.bobbypfreely.lpbf.midi.MidiConnection
+import com.bobbypfreely.lpbf.ui.LightshowFragment
 import com.bobbypfreely.lpbf.ui.MidiControllerBridge
 import com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
@@ -20,12 +21,11 @@ import com.bobbypfreely.lpbf.waveform.ExoPlaybackController
 import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 
 /**
- * Launchpad's Best Friend -- center = full Launchpad chrome (top 8 + 8x8 + side chains).
- * Left KeyLED / right KeySound / bottom Mark&Cut drawers inset the pad square, never cover it.
- * Pad hits preview the mapped cut via a single reused ExoPlaybackController.
- *
- * Default place mode is PLAY: after Unipack import, taps fire clips instead of re-assigning.
- * Pad numbers restart at 1 on each chain (UI only).
+ * Modes:
+ *  - PLAY (default / top Up): fire mapped clips
+ *  - EDIT (SOUND cog / top Down): map next unassigned cut
+ *  - HYBRID (main cog / top Right): map + preview
+ *  - LIGHTS (LED cog / top Left): lightshow edit on main grid, LED drawer open
  */
 class MainActivity : AppCompatActivity() {
 
@@ -36,6 +36,7 @@ class MainActivity : AppCompatActivity() {
 	private lateinit var rightDrawer: LinearLayout
 	private lateinit var bottomDrawer: LinearLayout
 	private lateinit var launchpadGrid: VirtualLaunchpadGridView
+	private lateinit var modeLabel: TextView
 
 	private lateinit var ledEditor: EditText
 	private lateinit var soundEditor: EditText
@@ -91,13 +92,14 @@ class MainActivity : AppCompatActivity() {
 		rightDrawer = findViewById(R.id.rightDrawer)
 		bottomDrawer = findViewById(R.id.bottomDrawer)
 		launchpadGrid = findViewById(R.id.mainLaunchpadGrid)
+		modeLabel = findViewById(R.id.modeLabel)
 
 		ledEditor = findViewById(R.id.ledEditor)
 		soundEditor = findViewById(R.id.soundEditor)
 
 		launchpadGrid.listener = viewModel
 		viewModel.isPlaceTabActive = true
-		viewModel.setPlaceMode(ProjectViewModel.PlaceMode.PLAY)
+		viewModel.enterUiMode(ProjectViewModel.UiMode.PLAY)
 
 		findViewById<View>(R.id.leftPillHandle).setOnClickListener { toggleLeft() }
 		findViewById<View>(R.id.rightPillHandle).setOnClickListener { toggleRight() }
@@ -106,6 +108,17 @@ class MainActivity : AppCompatActivity() {
 		findViewById<View?>(R.id.btnCloseRight)?.setOnClickListener { if (rightOpen) toggleRight() }
 		findViewById<View?>(R.id.btnCloseBottom)?.setOnClickListener { if (bottomOpen) toggleBottom() }
 		findViewById<View?>(R.id.btnExportUnipack)?.setOnClickListener { exportUnipack() }
+
+		// Cogs
+		findViewById<View?>(R.id.btnModeHybrid)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.HYBRID)
+		}
+		findViewById<View?>(R.id.btnModeMap)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.EDIT)
+		}
+		findViewById<View?>(R.id.btnModeLights)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.LIGHTS)
+		}
 
 		viewModel.segmentVersion.observe(this) { refreshSideLists() }
 		viewModel.markingSession.observe(this) { refreshSideLists() }
@@ -123,6 +136,7 @@ class MainActivity : AppCompatActivity() {
 				viewModel.clearPreviewRequest()
 			}
 		}
+		viewModel.uiMode.observe(this) { mode -> applyUiMode(mode) }
 
 		updateCenterInsets()
 		ensureWaveformFragment()
@@ -135,10 +149,47 @@ class MainActivity : AppCompatActivity() {
 		super.onDestroy()
 	}
 
+	/** Open matching drawers and update mode label. */
+	private fun applyUiMode(mode: ProjectViewModel.UiMode?) {
+		val m = mode ?: ProjectViewModel.UiMode.PLAY
+		modeLabel.text = when (m) {
+			ProjectViewModel.UiMode.PLAY -> "PLAY  ·  top Up"
+			ProjectViewModel.UiMode.EDIT -> "MAP  ·  top Down"
+			ProjectViewModel.UiMode.HYBRID -> "HYBRID  ·  top Right"
+			ProjectViewModel.UiMode.LIGHTS -> "LIGHTS  ·  top Left"
+		}
+		modeLabel.setTextColor(
+			when (m) {
+				ProjectViewModel.UiMode.PLAY -> 0xFF00ADB5.toInt()
+				ProjectViewModel.UiMode.EDIT -> 0xFF81C784.toInt()
+				ProjectViewModel.UiMode.HYBRID -> 0xFFFFB74D.toInt()
+				ProjectViewModel.UiMode.LIGHTS -> 0xFFB39DDB.toInt()
+			}
+		)
+
+		when (m) {
+			ProjectViewModel.UiMode.PLAY -> {
+				// stay put on drawers; just leave lights if we were there
+			}
+			ProjectViewModel.UiMode.EDIT -> {
+				if (!rightOpen) toggleRight()
+				if (leftOpen) toggleLeft()
+			}
+			ProjectViewModel.UiMode.HYBRID -> {
+				// main work on pad; optional sound open
+			}
+			ProjectViewModel.UiMode.LIGHTS -> {
+				if (!leftOpen) toggleLeft()
+				if (rightOpen) toggleRight()
+				ensureLightshowFragment()
+			}
+		}
+		refreshSideLists()
+	}
+
 	private fun playPadPreview(startMs: Int, endMs: Int) {
 		val path = viewModel.cachedFilePath ?: return
 		previewStopHandler.removeCallbacksAndMessages(null)
-
 		val controller = previewController ?: ExoPlaybackController(this).also { previewController = it }
 		if (previewLoadedPath != path) {
 			controller.load(path)
@@ -146,15 +197,21 @@ class MainActivity : AppCompatActivity() {
 		}
 		controller.playFrom(startMs.coerceAtLeast(0))
 		val durationMs = (endMs - startMs).coerceAtLeast(1).toLong()
-		previewStopHandler.postDelayed({
-			controller.pause()
-		}, durationMs)
+		previewStopHandler.postDelayed({ controller.pause() }, durationMs)
 	}
 
 	private fun ensureWaveformFragment() {
 		if (supportFragmentManager.findFragmentByTag("mark_and_cut") == null) {
 			supportFragmentManager.beginTransaction()
 				.replace(R.id.waveformPlaceholder, MarkAndCutFragment(), "mark_and_cut")
+				.commitNowAllowingStateLoss()
+		}
+	}
+
+	private fun ensureLightshowFragment() {
+		if (supportFragmentManager.findFragmentByTag("lightshow") == null) {
+			supportFragmentManager.beginTransaction()
+				.replace(R.id.lightshowPlaceholder, LightshowFragment(), "lightshow")
 				.commitNowAllowingStateLoss()
 		}
 	}
@@ -189,7 +246,9 @@ class MainActivity : AppCompatActivity() {
 		soundEditor.setText(soundLines.joinToString("\n"))
 		ledEditor.setText(ledLines.joinToString("\n"))
 
-		// Pad labels: 1..n in placement order ON THIS CHAIN only (not global cut index)
+		// Don't stomp lightshow edit paints when in LIGHTS mode
+		if (viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS) return
+
 		launchpadGrid.clearAllPads()
 		launchpadGrid.clearAllHighlights()
 		val litColor = 0xFF00ADB5.toInt()
@@ -244,8 +303,7 @@ class MainActivity : AppCompatActivity() {
 	private fun toggleLeft() {
 		leftOpen = !leftOpen
 		leftDrawer.visibility = if (leftOpen) View.VISIBLE else View.GONE
-		viewModel.isLightshowTabActive = leftOpen && !bottomOpen
-		viewModel.isPlaceTabActive = true
+		if (leftOpen) ensureLightshowFragment()
 		findViewById<TextView?>(R.id.leftPillLabel)?.text = if (leftOpen) "CLOSE" else "LED"
 		updateCenterInsets()
 		refreshSideLists()
@@ -254,7 +312,6 @@ class MainActivity : AppCompatActivity() {
 	private fun toggleRight() {
 		rightOpen = !rightOpen
 		rightDrawer.visibility = if (rightOpen) View.VISIBLE else View.GONE
-		viewModel.isPlaceTabActive = true
 		findViewById<TextView?>(R.id.rightPillLabel)?.text = if (rightOpen) "CLOSE" else "SOUND"
 		updateCenterInsets()
 		refreshSideLists()
@@ -275,7 +332,6 @@ class MainActivity : AppCompatActivity() {
 		val right = if (rightOpen) (drawerWidthDp * density).toInt() else (baseSideMarginDp * density).toInt()
 		val bottom = if (bottomOpen) (bottomDrawerHeightDp * density).toInt() else (baseBottomMarginDp * density).toInt()
 		val top = (8 * density).toInt()
-
 		val lp = centerPadContainer.layoutParams as ViewGroup.MarginLayoutParams
 		lp.leftMargin = left
 		lp.rightMargin = right
