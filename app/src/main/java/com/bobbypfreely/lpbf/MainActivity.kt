@@ -22,10 +22,10 @@ import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 
 /**
  * Modes:
- *  - PLAY (default / top Up): fire mapped clips
- *  - EDIT (SOUND cog / top Down): map next unassigned cut
- *  - HYBRID (main cog / top Right): map + preview
- *  - LIGHTS (LED cog / top Left): lightshow edit on main grid, LED drawer open
+ *  - PLAY: fire mapped clips; multi-note pads cycle on each press
+ *  - EDIT: map next unassigned cut (same pad stacks another note)
+ *  - HYBRID: map + preview
+ *  - LIGHTS: lightshow edit on main grid
  */
 class MainActivity : AppCompatActivity() {
 
@@ -57,7 +57,6 @@ class MainActivity : AppCompatActivity() {
 	private val previewStopHandler = Handler(Looper.getMainLooper())
 	private var previewLoadedPath: String? = null
 
-	/** Used by LightshowFragment to paint/preview on the center pad. */
 	fun mainLaunchpadGrid(): VirtualLaunchpadGridView = launchpadGrid
 
 	override fun onCreate(savedInstanceState: Bundle?) {
@@ -131,7 +130,10 @@ class MainActivity : AppCompatActivity() {
 		viewModel.previewRequest.observe(this) { req ->
 			if (req != null) {
 				if (req.x >= 0 && req.y >= 0) {
-					launchpadGrid.setPadLit(req.x, req.y, 0xFF00ADB5.toInt())
+					val flash = if (req.stackTotal > 1) {
+						"${req.stackIndex + 1}/${req.stackTotal}"
+					} else null
+					launchpadGrid.setPadLit(req.x, req.y, 0xFF00ADB5.toInt(), flash)
 					launchpadGrid.postDelayed({ launchpadGrid.clearPad(req.x, req.y) }, 200)
 				}
 				playPadPreview(req.startMs, req.endMs)
@@ -243,13 +245,14 @@ class MainActivity : AppCompatActivity() {
 		soundEditor.setText(soundLines.joinToString("\n"))
 		ledEditor.setText(ledLines.joinToString("\n"))
 
-		// LightshowFragment owns pad paint while in LIGHTS
 		if (viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS) return
 
+		// Pad labels: play-order 1..n on this chain; multi-note pads show "NxM" (order x stack)
 		launchpadGrid.clearAllPads()
 		launchpadGrid.clearAllHighlights()
 		val litColor = 0xFF00ADB5.toInt()
 		val firstOnChain = LinkedHashMap<Pair<Int, Int>, Int>()
+		val stackOnChain = HashMap<Pair<Int, Int>, Int>()
 		var n = 0
 		session?.segments()?.forEach { seg ->
 			val b = seg.button ?: return@forEach
@@ -259,9 +262,12 @@ class MainActivity : AppCompatActivity() {
 				n += 1
 				firstOnChain[key] = n
 			}
+			stackOnChain[key] = (stackOnChain[key] ?: 0) + 1
 		}
 		firstOnChain.forEach { (pad, num) ->
-			launchpadGrid.setPadLit(pad.first, pad.second, litColor, num.toString())
+			val stack = stackOnChain[pad] ?: 1
+			val label = if (stack > 1) "${num}x$stack" else num.toString()
+			launchpadGrid.setPadLit(pad.first, pad.second, litColor, label)
 		}
 	}
 
