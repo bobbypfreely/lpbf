@@ -25,6 +25,7 @@
 			android:background="#0B0B12" />
 	</FrameLayout>
 
+	<!-- Pills sit above drawers (elevation 24) so they remain a close/open toggle -->
 	<LinearLayout
 		android:id="@+id/leftPillHandle"
 		android:layout_width="48dp"
@@ -34,10 +35,11 @@
 		android:orientation="vertical"
 		android:gravity="center"
 		android:background="#1A1A2E"
-		android:elevation="10dp"
+		android:elevation="24dp"
 		android:clickable="true"
 		android:focusable="true">
 		<TextView
+			android:id="@+id/leftPillLabel"
 			android:layout_width="wrap_content"
 			android:layout_height="wrap_content"
 			android:text="LED"
@@ -59,14 +61,31 @@
 		android:padding="12dp"
 		android:clickable="true"
 		android:focusable="true">
-		<TextView
+		<LinearLayout
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
-			android:text="KeyLED"
-			android:textColor="#FFFFFF"
-			android:textSize="18sp"
-			android:textStyle="bold"
-			android:paddingBottom="8dp" />
+			android:orientation="horizontal"
+			android:gravity="center_vertical">
+			<TextView
+				android:layout_width="0dp"
+				android:layout_height="wrap_content"
+				android:layout_weight="1"
+				android:text="KeyLED"
+				android:textColor="#FFFFFF"
+				android:textSize="18sp"
+				android:textStyle="bold" />
+			<TextView
+				android:id="@+id/btnCloseLeft"
+				android:layout_width="40dp"
+				android:layout_height="40dp"
+				android:gravity="center"
+				android:text="✕"
+				android:textColor="#CCCCDD"
+				android:textSize="18sp"
+				android:background="?attr/selectableItemBackgroundBorderless"
+				android:clickable="true"
+				android:focusable="true" />
+		</LinearLayout>
 		<ScrollView
 			android:layout_width="match_parent"
 			android:layout_height="0dp"
@@ -114,10 +133,11 @@
 		android:orientation="vertical"
 		android:gravity="center"
 		android:background="#1A1A2E"
-		android:elevation="10dp"
+		android:elevation="24dp"
 		android:clickable="true"
 		android:focusable="true">
 		<TextView
+			android:id="@+id/rightPillLabel"
 			android:layout_width="wrap_content"
 			android:layout_height="wrap_content"
 			android:text="SOUND"
@@ -139,14 +159,31 @@
 		android:padding="12dp"
 		android:clickable="true"
 		android:focusable="true">
-		<TextView
+		<LinearLayout
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
-			android:text="KeySound"
-			android:textColor="#FFFFFF"
-			android:textSize="18sp"
-			android:textStyle="bold"
-			android:paddingBottom="8dp" />
+			android:orientation="horizontal"
+			android:gravity="center_vertical">
+			<TextView
+				android:layout_width="0dp"
+				android:layout_height="wrap_content"
+				android:layout_weight="1"
+				android:text="KeySound"
+				android:textColor="#FFFFFF"
+				android:textSize="18sp"
+				android:textStyle="bold" />
+			<TextView
+				android:id="@+id/btnCloseRight"
+				android:layout_width="40dp"
+				android:layout_height="40dp"
+				android:gravity="center"
+				android:text="✕"
+				android:textColor="#CCCCDD"
+				android:textSize="18sp"
+				android:background="?attr/selectableItemBackgroundBorderless"
+				android:clickable="true"
+				android:focusable="true" />
+		</LinearLayout>
 		<ScrollView
 			android:layout_width="match_parent"
 			android:layout_height="0dp"
@@ -200,10 +237,11 @@
 		android:orientation="horizontal"
 		android:gravity="center"
 		android:background="#1A1A2E"
-		android:elevation="10dp"
+		android:elevation="24dp"
 		android:clickable="true"
 		android:focusable="true">
 		<TextView
+			android:id="@+id/bottomPillLabel"
 			android:layout_width="wrap_content"
 			android:layout_height="wrap_content"
 			android:text="WAVEFORM"
@@ -231,14 +269,31 @@
 			android:layout_gravity="center_horizontal"
 			android:background="#444466"
 			android:layout_marginBottom="6dp" />
-		<TextView
+		<LinearLayout
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
-			android:text="Waveform / Mark &amp; Cut"
-			android:textColor="#FFFFFF"
-			android:textSize="14sp"
-			android:textStyle="bold"
-			android:paddingBottom="4dp" />
+			android:orientation="horizontal"
+			android:gravity="center_vertical">
+			<TextView
+				android:layout_width="0dp"
+				android:layout_height="wrap_content"
+				android:layout_weight="1"
+				android:text="Waveform / Mark & Cut"
+				android:textColor="#FFFFFF"
+				android:textSize="14sp"
+				android:textStyle="bold" />
+			<TextView
+				android:id="@+id/btnCloseBottom"
+				android:layout_width="40dp"
+				android:layout_height="40dp"
+				android:gravity="center"
+				android:text="✕"
+				android:textColor="#CCCCDD"
+				android:textSize="18sp"
+				android:background="?attr/selectableItemBackgroundBorderless"
+				android:clickable="true"
+				android:focusable="true" />
+		</LinearLayout>
 		<FrameLayout
 			android:id="@+id/waveformPlaceholder"
 			android:layout_width="match_parent"
