@@ -22,7 +22,6 @@
 			android:layout_height="match_parent"
 			android:orientation="vertical">
 
-			<!-- Mode bar: label + hybrid cog (main) -->
 			<LinearLayout
 				android:id="@+id/modeBar"
 				android:layout_width="match_parent"
@@ -43,12 +42,13 @@
 					android:letterSpacing="0.06" />
 				<TextView
 					android:id="@+id/btnModeHybrid"
-					android:layout_width="40dp"
+					android:layout_width="48dp"
 					android:layout_height="36dp"
 					android:gravity="center"
-					android:text="\u2699"
+					android:text="MODE"
 					android:textColor="#E0E0FF"
-					android:textSize="20sp"
+					android:textSize="11sp"
+					android:textStyle="bold"
 					android:contentDescription="Hybrid mode"
 					android:background="?attr/selectableItemBackgroundBorderless"
 					android:clickable="true"
@@ -114,12 +114,13 @@
 				android:textStyle="bold" />
 			<TextView
 				android:id="@+id/btnModeLights"
-				android:layout_width="40dp"
+				android:layout_width="48dp"
 				android:layout_height="40dp"
 				android:gravity="center"
-				android:text="\u2699"
+				android:text="MODE"
 				android:textColor="#E0E0FF"
-				android:textSize="20sp"
+				android:textSize="11sp"
+				android:textStyle="bold"
 				android:contentDescription="Lights edit mode"
 				android:background="?attr/selectableItemBackgroundBorderless"
 				android:clickable="true"
@@ -129,9 +130,10 @@
 				android:layout_width="40dp"
 				android:layout_height="40dp"
 				android:gravity="center"
-				android:text="\u2715"
+				android:text="X"
 				android:textColor="#CCCCDD"
-				android:textSize="18sp"
+				android:textSize="16sp"
+				android:textStyle="bold"
 				android:background="?attr/selectableItemBackgroundBorderless"
 				android:clickable="true"
 				android:focusable="true" />
@@ -140,7 +142,7 @@
 			android:id="@+id/lightsModeHint"
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
-			android:text="Tap cog for lights edit. Top-row Left also enters lights."
+			android:text="MODE enters lights edit. Top-row 3 also enters lights."
 			android:textColor="#8888AA"
 			android:textSize="11sp"
 			android:paddingBottom="6dp" />
@@ -231,12 +233,13 @@
 				android:textStyle="bold" />
 			<TextView
 				android:id="@+id/btnModeMap"
-				android:layout_width="40dp"
+				android:layout_width="48dp"
 				android:layout_height="40dp"
 				android:gravity="center"
-				android:text="\u2699"
+				android:text="MODE"
 				android:textColor="#E0FFE0"
-				android:textSize="20sp"
+				android:textSize="11sp"
+				android:textStyle="bold"
 				android:contentDescription="Map / edit mode"
 				android:background="?attr/selectableItemBackgroundBorderless"
 				android:clickable="true"
@@ -246,9 +249,10 @@
 				android:layout_width="40dp"
 				android:layout_height="40dp"
 				android:gravity="center"
-				android:text="\u2715"
+				android:text="X"
 				android:textColor="#CCCCDD"
-				android:textSize="18sp"
+				android:textSize="16sp"
+				android:textStyle="bold"
 				android:background="?attr/selectableItemBackgroundBorderless"
 				android:clickable="true"
 				android:focusable="true" />
@@ -256,7 +260,7 @@
 		<TextView
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
-			android:text="Cog enters map (EDIT). Top-row Down also maps."
+			android:text="MODE enters map (EDIT). Top-row 2 also maps."
 			android:textColor="#8888AA"
 			android:textSize="11sp"
 			android:paddingBottom="6dp" />
@@ -356,9 +360,10 @@
 				android:layout_width="40dp"
 				android:layout_height="40dp"
 				android:gravity="center"
-				android:text="\u2715"
+				android:text="X"
 				android:textColor="#CCCCDD"
-				android:textSize="18sp"
+				android:textSize="16sp"
+				android:textStyle="bold"
 				android:background="?attr/selectableItemBackgroundBorderless"
 				android:clickable="true"
 				android:focusable="true" />
