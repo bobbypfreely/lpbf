@@ -30,6 +30,9 @@ import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
  *  - EDIT: map next unassigned cut (same pad stacks another note)
  *  - HYBRID: map + preview sound/lights
  *  - LIGHTS: lightshow authoring on main grid
+ *
+ * Pad labels: AutoPlay press order per chain (restarts at 1 each chain).
+ * Fallback: map order on that chain only — never continuous across chains.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -61,7 +64,6 @@ class MainActivity : AppCompatActivity() {
 	private val previewStopHandler = Handler(Looper.getMainLooper())
 	private val lightPlayHandler = Handler(Looper.getMainLooper())
 	private var previewLoadedPath: String? = null
-	/** True while a pad light pattern is animating -- skip full pad repaint. */
 	private var lightsPlaying = false
 
 	fun mainLaunchpadGrid(): VirtualLaunchpadGridView = launchpadGrid
@@ -130,13 +132,13 @@ class MainActivity : AppCompatActivity() {
 
 		viewModel.segmentVersion.observe(this) { refreshSideLists() }
 		viewModel.markingSession.observe(this) { refreshSideLists() }
+		viewModel.autoPlay.observe(this) { refreshSideLists() }
 		viewModel.currentChain.observe(this) { chain ->
 			launchpadGrid.setActiveChain(chain ?: 0)
 			refreshSideLists()
 		}
 		viewModel.previewRequest.observe(this) { req ->
 			if (req != null) {
-				// Brief hit flash on the pressed pad (skip if lights will own the paint)
 				if (req.pattern == null && req.x >= 0 && req.y >= 0) {
 					val flash = if (req.stackTotal > 1) {
 						"${req.stackIndex + 1}/${req.stackTotal}"
@@ -151,8 +153,6 @@ class MainActivity : AppCompatActivity() {
 		viewModel.uiMode.observe(this) { mode -> applyUiMode(mode) }
 
 		updateCenterInsets()
-		// Waveform fragment is created when the drawer first opens -- not at startup --
-		// so isMarkAndCutTabActive stays false until the user opens WAVEFORM.
 	}
 
 	override fun onDestroy() {
@@ -196,11 +196,8 @@ class MainActivity : AppCompatActivity() {
 		refreshSideLists()
 	}
 
-	/** Play the cut's audio and, if present, its light pattern on the main grid + hardware. */
 	private fun playPadPreview(startMs: Int, endMs: Int, pattern: Pattern?) {
 		val durationMs = (endMs - startMs).coerceAtLeast(1)
-
-		// --- audio ---
 		val path = viewModel.cachedFilePath
 		if (path != null) {
 			previewStopHandler.removeCallbacksAndMessages(null)
@@ -212,17 +209,13 @@ class MainActivity : AppCompatActivity() {
 			controller.playFrom(startMs.coerceAtLeast(0))
 			previewStopHandler.postDelayed({ controller.pause() }, durationMs.toLong())
 		}
-
-		// --- lights ---
 		playPadLights(pattern, durationMs)
 	}
 
 	private fun stopLightPlayback() {
 		lightPlayHandler.removeCallbacksAndMessages(null)
 		lightsPlaying = false
-		try {
-			MidiConnection.driver.sendClearLed()
-		} catch (_: Exception) { }
+		try { MidiConnection.driver.sendClearLed() } catch (_: Exception) { }
 	}
 
 	private fun playPadLights(pattern: Pattern?, durationMs: Int) {
@@ -252,7 +245,6 @@ class MainActivity : AppCompatActivity() {
 					if (x < 0 || y < 0) continue
 					lightPlayHandler.postDelayed({
 						val argb = LaunchpadColor.ARGB.getOrElse(vel) { LaunchpadColor.ARGB[0] }.toInt()
-						// Force opaque if palette entry is translucent
 						val paint = if ((argb ushr 24) == 0) 0xFF000000.toInt() or (argb and 0x00FFFFFF) else argb
 						launchpadGrid.setPadLit(x, y, paint)
 						try { driver.sendPadLed(x, y, vel) } catch (_: Exception) { }
@@ -268,11 +260,10 @@ class MainActivity : AppCompatActivity() {
 						try { driver.sendPadLed(x, y, 0) } catch (_: Exception) { }
 					}, at)
 				}
-				else -> { /* Chain etc. ignored in pad preview */ }
+				else -> { }
 			}
 		}
 
-		// Restore pad labels after the pattern finishes
 		lightPlayHandler.postDelayed({
 			lightsPlaying = false
 			if (viewModel.uiMode.value != ProjectViewModel.UiMode.LIGHTS) {
@@ -328,20 +319,38 @@ class MainActivity : AppCompatActivity() {
 		ledEditor.setText(ledLines.joinToString("\n"))
 
 		if (viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS) return
-		if (lightsPlaying) return // don't stomp an in-flight light pattern
+		if (lightsPlaying) return
 
 		launchpadGrid.clearAllPads()
 		launchpadGrid.clearAllHighlights()
 		val litColor = 0xFF00ADB5.toInt()
-		val padCuts = LinkedHashMap<Pair<Int, Int>, MutableList<Int>>()
-		session?.segments()?.forEachIndexed { i, seg ->
-			val b = seg.button ?: return@forEachIndexed
-			if (b.chain != activeChain) return@forEachIndexed
-			padCuts.getOrPut(b.x to b.y) { mutableListOf() }.add(i + 1)
-		}
-		padCuts.forEach { (pad, cuts) ->
-			val label = cuts.joinToString(" ")
-			launchpadGrid.setPadLit(pad.first, pad.second, litColor, label)
+
+		// AutoPlay order when present: each chain restarts at 1; multi-hit = space-separated
+		// numbers in press order. No continuous numbering across chains.
+		val autoPlay = viewModel.autoPlay.value.orEmpty()
+		val chainPresses = autoPlay.filter { it.button.chain == activeChain }
+		if (chainPresses.isNotEmpty()) {
+			val padNums = LinkedHashMap<Pair<Int, Int>, MutableList<Int>>()
+			chainPresses.forEachIndexed { i, press ->
+				val key = press.button.x to press.button.y
+				padNums.getOrPut(key) { mutableListOf() }.add(i + 1)
+			}
+			padNums.forEach { (pad, nums) ->
+				launchpadGrid.setPadLit(pad.first, pad.second, litColor, nums.joinToString(" "))
+			}
+		} else {
+			val padNums = LinkedHashMap<Pair<Int, Int>, MutableList<Int>>()
+			var n = 0
+			session?.segments()?.forEach { seg ->
+				val b = seg.button ?: return@forEach
+				if (b.chain != activeChain) return@forEach
+				val key = b.x to b.y
+				n += 1
+				padNums.getOrPut(key) { mutableListOf() }.add(n)
+			}
+			padNums.forEach { (pad, nums) ->
+				launchpadGrid.setPadLit(pad.first, pad.second, litColor, nums.joinToString(" "))
+			}
 		}
 	}
 
