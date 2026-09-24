@@ -1,1 +1,1 @@
-SEE_FILE_AT_/tmp/MarkAndCutFragment.kt
+RESTORE_FROM_ARTIFACTS
