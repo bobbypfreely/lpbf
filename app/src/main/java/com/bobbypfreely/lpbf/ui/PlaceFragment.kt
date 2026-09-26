@@ -85,6 +85,7 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 
 		viewModel.placeMode.observe(viewLifecycleOwner) { mode ->
 			modeToggle.text = "Mode: ${mode.name.lowercase().replaceFirstChar { it.uppercase() }}"
+			updateTopControlState(mode)
 			refresh()
 		}
 
@@ -140,6 +141,20 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 				}
 			}
 			topControlRow.addView(button)
+		}
+	}
+
+	private fun updateTopControlState(mode: ProjectViewModel.PlaceMode) {
+		if (topControlRow.childCount < 8) return
+		val activeIndex = when (mode) {
+			ProjectViewModel.PlaceMode.PLAY -> 4
+			ProjectViewModel.PlaceMode.EDIT -> 5
+			ProjectViewModel.PlaceMode.HYBRID -> 6
+		}
+		for (index in 4 until 8) {
+			val button = topControlRow.getChildAt(index) as? Button ?: continue
+			button.background = topControlBackground(index == activeIndex)
+			button.alpha = if (index == activeIndex) 1f else 0.72f
 		}
 	}
 
