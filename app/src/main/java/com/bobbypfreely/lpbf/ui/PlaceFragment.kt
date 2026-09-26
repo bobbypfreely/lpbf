@@ -1,6 +1,7 @@
 package com.bobbypfreely.lpbf.ui
 
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -118,12 +119,16 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 		chainButtons.clear()
 		for (chain in 0 until 8) {
 			val button = Button(requireContext()).apply {
-				text = (chain + 1).toString()
+				text = chain.toString()
 				textSize = 12f
-				layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-					marginEnd = if (chain < 7) 4 else 0
+				layoutParams = LinearLayout.LayoutParams(46, 0, 1f).apply {
+					bottomMargin = if (chain < 7) 3 else 0
 				}
-				setPadding(0, 8, 0, 8)
+				setPadding(0, 0, 0, 0)
+				minHeight = 0
+				minWidth = 0
+				stateListAnimator = null
+				background = circleChainBackground(false)
 				setOnClickListener { viewModel.setCurrentChain(chain) }
 			}
 			chainSelectorRow.addView(button)
@@ -131,15 +136,16 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 		}
 	}
 
+	private fun circleChainBackground(active: Boolean): GradientDrawable = GradientDrawable().apply {
+		shape = GradientDrawable.OVAL
+		setColor(Color.parseColor(if (active) "#00D4C8" else "#151528"))
+		setStroke(2, Color.parseColor(if (active) "#B8FFF8" else "#343451"))
+	}
+
 	private fun updateChainSelectorHighlight(activeChain: Int) {
 		chainButtons.forEachIndexed { chain, button ->
-			if (chain == activeChain) {
-				button.setBackgroundColor(Color.parseColor("#00ADB5"))
-				button.setTextColor(Color.parseColor("#0F0F1A"))
-			} else {
-				button.setBackgroundColor(Color.parseColor("#1A1A2E"))
-				button.setTextColor(Color.parseColor("#DDDDDD"))
-			}
+			button.background = circleChainBackground(chain == activeChain)
+			button.setTextColor(if (chain == activeChain) Color.parseColor("#061014") else Color.parseColor("#DDDDDD"))
 		}
 	}
 
