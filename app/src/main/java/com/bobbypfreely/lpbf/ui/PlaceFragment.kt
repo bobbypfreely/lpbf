@@ -43,6 +43,7 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 
 	private lateinit var statusText: TextView
 	private lateinit var modeToggle: Button
+	private lateinit var topControlRow: LinearLayout
 	private lateinit var chainSelectorRow: LinearLayout
 	private lateinit var segmentListContainer: LinearLayout
 	private lateinit var grid: VirtualLaunchpadGridView
@@ -57,10 +58,12 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 
 		statusText = view.findViewById(R.id.placeStatusText)
 		modeToggle = view.findViewById(R.id.placeModeToggle)
+		topControlRow = view.findViewById(R.id.topControlRow)
 		chainSelectorRow = view.findViewById(R.id.chainSelectorRow)
 		segmentListContainer = view.findViewById(R.id.segmentListContainer)
 		grid = view.findViewById(R.id.placeGrid)
 
+		buildTopControls()
 		buildChainSelector()
 
 		// Virtual grid taps go through the exact same code path a physical Launchpad
@@ -110,6 +113,40 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 		previewStopHandler.removeCallbacksAndMessages(null)
 		previewController?.release()
 		previewController = null
+	}
+
+	// ---- Top Launchpad controls ----
+
+	private fun buildTopControls() {
+		topControlRow.removeAllViews()
+		val labels = listOf("↑", "↓", "←", "→", "PLAY", "EDIT", "HYBRID", "LIGHT")
+		labels.forEachIndexed { index, label ->
+			val button = Button(requireContext()).apply {
+				text = label
+				textSize = if (index < 4) 18f else 8f
+				setTextColor(Color.parseColor("#E9E9F5"))
+				setPadding(0, 0, 0, 0)
+				minHeight = 0
+				minWidth = 0
+				stateListAnimator = null
+				background = topControlBackground(index == 5)
+				layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
+					marginEnd = if (index < 7) 4 else 0
+				}
+				when (index) {
+					4 -> setOnClickListener { viewModel.setPlaceMode(ProjectViewModel.PlaceMode.PLAY) }
+					5 -> setOnClickListener { viewModel.setPlaceMode(ProjectViewModel.PlaceMode.EDIT) }
+					6 -> setOnClickListener { viewModel.setPlaceMode(ProjectViewModel.PlaceMode.HYBRID) }
+				}
+			}
+			topControlRow.addView(button)
+		}
+	}
+
+	private fun topControlBackground(active: Boolean): GradientDrawable = GradientDrawable().apply {
+		cornerRadius = 10f
+		setColor(Color.parseColor(if (active) "#153F46" else "#111124"))
+		setStroke(1, Color.parseColor(if (active) "#00D4C8" else "#282842"))
 	}
 
 	// ---- Chain selector (8 side-button pages, mirrors a real Launchpad) ----
