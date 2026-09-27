@@ -1,6 +1,9 @@
 name: Build APK
 
 on:
+  push:
+    branches:
+      - testing
   workflow_dispatch:
     inputs:
       build_type:
