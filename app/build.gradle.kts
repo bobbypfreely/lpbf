@@ -8,7 +8,7 @@ android {
 	compileSdk = 34
 
 	defaultConfig {
-		applicationId = "com.bobbypfreely.lpbf"
+		applicationId = "com.bobbypfreely.lpbf.tester"
 		minSdk = 26
 		targetSdk = 34
 		versionCode = 1
@@ -47,7 +47,6 @@ android {
 	}
 
 	buildFeatures {
-		// Needed by the ported MIDI stack's Log.kt, which checks BuildConfig.DEBUG
 		buildConfig = true
 	}
 }
@@ -60,17 +59,8 @@ dependencies {
 	implementation("androidx.fragment:fragment-ktx:1.8.2")
 	implementation("androidx.activity:activity-ktx:1.9.1")
 	implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.4")
-
-	// Required by the ported MIDI stack (MidiConnection.kt uses CoroutineScope/channels for USB I/O)
 	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-
-	// Replaces our hand-rolled MediaCodec/AudioTrack playback code with Google's
-	// battle-tested media pipeline, for the Mark and Cut screen's play/pause/seek.
 	implementation("androidx.media3:media3-exoplayer:1.4.1")
 	implementation("androidx.media3:media3-common:1.4.1")
-
-	// DocumentFile: lets us walk a user-picked folder tree (loose, unzipped Unipack --
-	// info/keySound/sounds/keyLed as plain files/folders) the same safe way we already
-	// read single files through SAF, since content:// trees aren't plain java.io.File.
 	implementation("androidx.documentfile:documentfile:1.0.1")
 }
