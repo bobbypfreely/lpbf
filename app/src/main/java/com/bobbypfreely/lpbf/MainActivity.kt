@@ -21,7 +21,6 @@ import com.bobbypfreely.lpbf.ui.LightshowFragment
 import com.bobbypfreely.lpbf.ui.MidiControllerBridge
 import com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
-import com.bobbypfreely.lpbf.waveform.ExoPlaybackController
 import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 
 /**
@@ -33,6 +32,8 @@ import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
  *
  * Pad labels: AutoPlay press order per chain (restarts at 1 each chain).
  * Fallback: map order on that chain only — never continuous across chains.
+ *
+ * Audio: PadVoicePool (8 voices) so overlapping pads can sound at once.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -60,10 +61,9 @@ class MainActivity : AppCompatActivity() {
 	private val soundLines = mutableListOf<String>()
 	private val ledLines = mutableListOf<String>()
 
-	private var previewController: ExoPlaybackController? = null
-	private val previewStopHandler = Handler(Looper.getMainLooper())
+	/** Polyphonic pad audio — several clips can ring at once (Unipad-style overlap). */
+	private val padVoicePool = com.bobbypfreely.lpbf.audio.PadVoicePool(this, voiceCount = 8)
 	private val lightPlayHandler = Handler(Looper.getMainLooper())
-	private var previewLoadedPath: String? = null
 	private var lightsPlaying = false
 
 	fun mainLaunchpadGrid(): VirtualLaunchpadGridView = launchpadGrid
@@ -156,10 +156,8 @@ class MainActivity : AppCompatActivity() {
 	}
 
 	override fun onDestroy() {
-		previewStopHandler.removeCallbacksAndMessages(null)
 		stopLightPlayback()
-		previewController?.release()
-		previewController = null
+		padVoicePool.release()
 		super.onDestroy()
 	}
 
@@ -200,14 +198,9 @@ class MainActivity : AppCompatActivity() {
 		val durationMs = (endMs - startMs).coerceAtLeast(1)
 		val path = viewModel.cachedFilePath
 		if (path != null) {
-			previewStopHandler.removeCallbacksAndMessages(null)
-			val controller = previewController ?: ExoPlaybackController(this).also { previewController = it }
-			if (previewLoadedPath != path) {
-				controller.load(path)
-				previewLoadedPath = path
-			}
-			controller.playFrom(startMs.coerceAtLeast(0))
-			previewStopHandler.postDelayed({ controller.pause() }, durationMs.toLong())
+			// Voice pool: does not stop other voices — true multi-fire overlap
+			padVoicePool.ensureLoaded(path)
+			padVoicePool.play(startMs.coerceAtLeast(0), durationMs)
 		}
 		playPadLights(pattern, durationMs)
 	}
@@ -325,8 +318,6 @@ class MainActivity : AppCompatActivity() {
 		launchpadGrid.clearAllHighlights()
 		val litColor = 0xFF00ADB5.toInt()
 
-		// AutoPlay order when present: each chain restarts at 1; multi-hit = space-separated
-		// numbers in press order. No continuous numbering across chains.
 		val autoPlay = viewModel.autoPlay.value.orEmpty()
 		val chainPresses = autoPlay.filter { it.button.chain == activeChain }
 		if (chainPresses.isNotEmpty()) {
