@@ -1,8 +1,6 @@
 package com.bobbypfreely.lpbf
 
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
@@ -12,10 +10,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
-import com.bobbypfreely.lpbf.lightshow.LedAnimation
 import com.bobbypfreely.lpbf.lightshow.Pattern
-import com.bobbypfreely.lpbf.lightshow.PatternCompiler
-import com.bobbypfreely.lpbf.manager.LaunchpadColor
 import com.bobbypfreely.lpbf.midi.MidiConnection
 import com.bobbypfreely.lpbf.ui.LightshowFragment
 import com.bobbypfreely.lpbf.ui.MidiControllerBridge
@@ -33,7 +28,7 @@ import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
  * Pad labels: AutoPlay press order per chain (restarts at 1 each chain).
  * Fallback: map order on that chain only — never continuous across chains.
  *
- * Audio: PadVoicePool (8 voices) so overlapping pads can sound at once.
+ * Audio/lights: LpbfHarness modules (swap without rewiring this activity).
  */
 class MainActivity : AppCompatActivity() {
 
@@ -61,9 +56,8 @@ class MainActivity : AppCompatActivity() {
 	private val soundLines = mutableListOf<String>()
 	private val ledLines = mutableListOf<String>()
 
-	/** Polyphonic pad audio — several clips can ring at once (Unipad-style overlap). */
-	private val padVoicePool = com.bobbypfreely.lpbf.audio.PadVoicePool(this, voiceCount = 8)
-	private val lightPlayHandler = Handler(Looper.getMainLooper())
+	/** Modular stack: sound + lights (+ map/autoplay when plugged). Pull any module out and swap. */
+	private lateinit var harness: com.bobbypfreely.lpbf.harness.LpbfHarness
 	private var lightsPlaying = false
 
 	fun mainLaunchpadGrid(): VirtualLaunchpadGridView = launchpadGrid
@@ -109,6 +103,12 @@ class MainActivity : AppCompatActivity() {
 		soundEditor = findViewById(R.id.soundEditor)
 
 		launchpadGrid.listener = viewModel
+		harness = com.bobbypfreely.lpbf.harness.LpbfHarness.assemble(
+			context = this,
+			grid = { launchpadGrid },
+			isLightsAuthoring = { viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS },
+			onLightsBusy = { busy -> lightsPlaying = busy; if (!busy) refreshSideLists() },
+		)
 		viewModel.isPlaceTabActive = true
 		viewModel.enterUiMode(ProjectViewModel.UiMode.PLAY)
 
@@ -156,8 +156,7 @@ class MainActivity : AppCompatActivity() {
 	}
 
 	override fun onDestroy() {
-		stopLightPlayback()
-		padVoicePool.release()
+		if (::harness.isInitialized) harness.release()
 		super.onDestroy()
 	}
 
@@ -195,74 +194,9 @@ class MainActivity : AppCompatActivity() {
 	}
 
 	private fun playPadPreview(startMs: Int, endMs: Int, pattern: Pattern?) {
-		val durationMs = (endMs - startMs).coerceAtLeast(1)
-		val path = viewModel.cachedFilePath
-		if (path != null) {
-			// Voice pool: does not stop other voices — true multi-fire overlap
-			padVoicePool.ensureLoaded(path)
-			padVoicePool.play(startMs.coerceAtLeast(0), durationMs)
-		}
-		playPadLights(pattern, durationMs)
-	}
-
-	private fun stopLightPlayback() {
-		lightPlayHandler.removeCallbacksAndMessages(null)
-		lightsPlaying = false
-		try { MidiConnection.driver.sendClearLed() } catch (_: Exception) { }
-	}
-
-	private fun playPadLights(pattern: Pattern?, durationMs: Int) {
-		stopLightPlayback()
-		if (pattern == null || pattern.keyframes.isEmpty() || durationMs <= 0) return
-		if (viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS) return
-
-		lightsPlaying = true
-		val driver = MidiConnection.driver
-		val events = try {
-			PatternCompiler.compile(pattern, durationMs)
-		} catch (e: Exception) {
-			viewModel.logDebug("Light play compile failed: ${e.message}")
-			lightsPlaying = false
-			return
-		}
-
-		var tMs = 0
-		for (ev in events) {
-			when (ev) {
-				is LedAnimation.LedEvent.Delay -> tMs += ev.delay
-				is LedAnimation.LedEvent.On -> {
-					val at = tMs.toLong()
-					val x = ev.x
-					val y = ev.y
-					val vel = ev.velocity.coerceIn(0, 127)
-					if (x < 0 || y < 0) continue
-					lightPlayHandler.postDelayed({
-						val argb = LaunchpadColor.ARGB.getOrElse(vel) { LaunchpadColor.ARGB[0] }.toInt()
-						val paint = if ((argb ushr 24) == 0) 0xFF000000.toInt() or (argb and 0x00FFFFFF) else argb
-						launchpadGrid.setPadLit(x, y, paint)
-						try { driver.sendPadLed(x, y, vel) } catch (_: Exception) { }
-					}, at)
-				}
-				is LedAnimation.LedEvent.Off -> {
-					val at = tMs.toLong()
-					val x = ev.x
-					val y = ev.y
-					if (x < 0 || y < 0) continue
-					lightPlayHandler.postDelayed({
-						launchpadGrid.clearPad(x, y)
-						try { driver.sendPadLed(x, y, 0) } catch (_: Exception) { }
-					}, at)
-				}
-				else -> { }
-			}
-		}
-
-		lightPlayHandler.postDelayed({
-			lightsPlaying = false
-			if (viewModel.uiMode.value != ProjectViewModel.UiMode.LIGHTS) {
-				refreshSideLists()
-			}
-		}, durationMs.toLong() + 40)
+		// Harness: sound (polyphonic) + lights in one call — modules are swappable
+		harness.setSource(viewModel.cachedFilePath)
+		harness.fire(startMs, endMs, pattern)
 	}
 
 	private fun ensureWaveformFragment() {
