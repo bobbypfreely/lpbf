@@ -56,7 +56,7 @@ class MainActivity : AppCompatActivity() {
 	private val soundLines = mutableListOf<String>()
 	private val ledLines = mutableListOf<String>()
 
-	/** Modular stack: sound + lights (+ map/autoplay when plugged). Pull any module out and swap. */
+	/** Modular stack: sound + lights (+ map/autoplay when plugged). */
 	private lateinit var harness: com.bobbypfreely.lpbf.harness.LpbfHarness
 	private var lightsPlaying = false
 
@@ -103,12 +103,17 @@ class MainActivity : AppCompatActivity() {
 		soundEditor = findViewById(R.id.soundEditor)
 
 		launchpadGrid.listener = viewModel
-		harness = com.bobbypfreely.lpbf.harness.LpbfHarness.assemble(
-			context = this,
-			grid = { launchpadGrid },
-			isLightsAuthoring = { viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS },
-			onLightsBusy = { busy -> lightsPlaying = busy; if (!busy) refreshSideLists() },
-		)
+		try {
+			harness = com.bobbypfreely.lpbf.harness.LpbfHarness.assemble(
+				context = this,
+				grid = { launchpadGrid },
+				isLightsAuthoring = { viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS },
+				onLightsBusy = { busy -> lightsPlaying = busy; if (!busy) refreshSideLists() },
+			)
+		} catch (e: Exception) {
+			android.util.Log.e("MainActivity", "Harness assemble failed", e)
+			viewModel.logDebug("Harness failed: ${e.message}")
+		}
 		viewModel.isPlaceTabActive = true
 		viewModel.enterUiMode(ProjectViewModel.UiMode.PLAY)
 
@@ -194,9 +199,14 @@ class MainActivity : AppCompatActivity() {
 	}
 
 	private fun playPadPreview(startMs: Int, endMs: Int, pattern: Pattern?) {
-		// Harness: sound (polyphonic) + lights in one call — modules are swappable
-		harness.setSource(viewModel.cachedFilePath)
-		harness.fire(startMs, endMs, pattern)
+		if (!::harness.isInitialized) return
+		try {
+			harness.setSource(viewModel.cachedFilePath)
+			harness.fire(startMs, endMs, pattern)
+		} catch (e: Exception) {
+			android.util.Log.e("MainActivity", "Pad fire failed", e)
+			viewModel.logDebug("Pad fire failed: ${e.message}")
+		}
 	}
 
 	private fun ensureWaveformFragment() {
