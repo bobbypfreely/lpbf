@@ -7,16 +7,9 @@ import android.os.SystemClock
 import com.bobbypfreely.lpbf.waveform.ExoPlaybackController
 
 /**
- * Small pool of ExoPlayers so multiple pad clips can overlap (polyphony).
- *
- * Voices are created lazily on first play — constructing 8 ExoPlayers in Activity.onCreate
- * was crashing cold start on some devices.
- *
- * Each voice has its own stop timer; firing a new pad never pauses the others.
- * When all voices are busy, the oldest (soonest-to-finish) is stolen.
- *
- * All voices share the same concatenated import file path (seek + play a range).
- * Main-thread only (ExoPlayer requirement).
+ * Polyphonic pad voices. ExoPlayers are created only on first [play] so Activity
+ * open does not allocate 8 players (that was crashing cold start on some devices).
+ * Each fire plays out on its own voice; a new fire does not stop others.
  */
 class PadVoicePool(
 	context: Context,
@@ -31,57 +24,41 @@ class PadVoicePool(
 
 	private val appContext = context.applicationContext
 	private val maxVoices = voiceCount.coerceIn(2, 16)
-	/** Null until first [ensureLoaded]/[play] — avoids crash-on-open from eager ExoPlayer alloc. */
 	private var voices: ArrayList<Voice>? = null
 	private var loadedPath: String? = null
+	private var pathLoadedOnVoices: String? = null
 
 	private fun ensureVoices(): ArrayList<Voice> {
 		voices?.let { return it }
 		val created = ArrayList<Voice>(maxVoices)
-		repeat(maxVoices) {
-			created.add(Voice(ExoPlaybackController(appContext)))
-		}
+		repeat(maxVoices) { created.add(Voice(ExoPlaybackController(appContext))) }
 		voices = created
-		// If a source was already requested before voices existed, load it now.
-		loadedPath?.let { path ->
-			created.forEach { it.controller.load(path) }
-		}
 		return created
 	}
 
-	fun ensureLoaded(path: String) {
-		if (path == loadedPath) return
-		loadedPath = path
-		val list = voices ?: return // defer actual load until first play creates voices
+	private fun applySource(list: ArrayList<Voice>, path: String) {
+		if (pathLoadedOnVoices == path) return
 		list.forEach { voice ->
 			voice.stopHandler.removeCallbacksAndMessages(null)
-			voice.controller.load(path)
+			try { voice.controller.load(path) } catch (_: Exception) { }
 			voice.busyUntilElapsed = 0L
 		}
+		pathLoadedOnVoices = path
 	}
 
-	/** Play [durationMs] starting at [startMs] on a free (or stolen) voice. */
+	fun ensureLoaded(path: String) {
+		loadedPath = path
+		voices?.let { applySource(it, path) }
+	}
+
 	fun play(startMs: Int, durationMs: Int) {
-		if (loadedPath == null) return
-		val list = ensureVoices()
-		// Ensure media is loaded on first real play
 		val path = loadedPath ?: return
-		list.forEach { v ->
-			// load is cheap if already set; safe if voice just created
-		}
-		// If voices were just created after ensureLoaded deferred, load now
-		if (list.firstOrNull()?.controller != null) {
-			// Always load current path onto all voices once at first play batch
-			list.forEach { voice ->
-				try { voice.controller.load(path) } catch (_: Exception) { }
-			}
-		}
+		val list = ensureVoices()
+		applySource(list, path)
 
 		val dur = durationMs.coerceAtLeast(1)
 		val now = SystemClock.elapsedRealtime()
-		val voice = list
-			.filter { it.busyUntilElapsed <= now }
-			.minByOrNull { it.busyUntilElapsed }
+		val voice = list.filter { it.busyUntilElapsed <= now }.minByOrNull { it.busyUntilElapsed }
 			?: list.minByOrNull { it.busyUntilElapsed }
 			?: return
 
@@ -108,5 +85,6 @@ class PadVoicePool(
 		}
 		voices = null
 		loadedPath = null
+		pathLoadedOnVoices = null
 	}
 }
