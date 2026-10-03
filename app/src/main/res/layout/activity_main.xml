@@ -41,6 +41,32 @@
 					android:textStyle="bold"
 					android:letterSpacing="0.06" />
 				<TextView
+					android:id="@+id/btnAutoPlayToggle"
+					android:layout_width="52dp"
+					android:layout_height="36dp"
+					android:gravity="center"
+					android:text="AP ON"
+					android:textColor="#81C784"
+					android:textSize="11sp"
+					android:textStyle="bold"
+					android:contentDescription="Toggle AutoPlay labels"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:clickable="true"
+					android:focusable="true" />
+				<TextView
+					android:id="@+id/btnGuide"
+					android:layout_width="52dp"
+					android:layout_height="36dp"
+					android:gravity="center"
+					android:text="GUIDE"
+					android:textColor="#8888AA"
+					android:textSize="11sp"
+					android:textStyle="bold"
+					android:contentDescription="Guide mode highlights next pad"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:clickable="true"
+					android:focusable="true" />
+				<TextView
 					android:id="@+id/btnModeHybrid"
 					android:layout_width="48dp"
 					android:layout_height="36dp"
