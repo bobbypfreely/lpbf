@@ -18,13 +18,6 @@ import com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
 import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 
-/**
- * Modes:
- *  - PLAY: fire mapped clips + lights (clean grid, no mapping labels)
- *  - EDIT / HYBRID: map + labels
- *  - LIGHTS: lightshow authoring
- * AP toggle + Guide mode in mode bar. Sound list opens waveform cut editor.
- */
 class MainActivity : AppCompatActivity() {
 
 	private lateinit var viewModel: ProjectViewModel
@@ -42,7 +35,7 @@ class MainActivity : AppCompatActivity() {
 	private val baseSideMarginDp = 56
 	private val baseBottomMarginDp = 56
 	private val drawerWidthDp = 240
-	private val bottomDrawerHeightDp = 320
+	private val bottomDrawerHeightDp = 480
 	private val soundLines = mutableListOf<String>()
 	private val ledLines = mutableListOf<String>()
 	private lateinit var harness: com.bobbypfreely.lpbf.harness.LpbfHarness
@@ -221,7 +214,7 @@ class MainActivity : AppCompatActivity() {
 		soundSummary?.text = if (soundLines.isEmpty()) "(no mappings yet)" else soundLines.joinToString("\n")
 		findViewById<TextView?>(R.id.ledFolderSummary)?.text = if (ledLines.isEmpty()) "(no LED patterns yet)" else ledLines.joinToString("\n")
 		soundEditor.setText(soundLines.joinToString("\n"))
-		ledEditor.setText(ledLines.joinToString("\n"))
+		ledEditor.setText(ledLines.joinToString("\n")
 		soundSummary?.setOnClickListener {
 			if (soundLines.isEmpty()) return@setOnClickListener
 			if (!bottomOpen) toggleBottom()
