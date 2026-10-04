@@ -26,14 +26,13 @@
 	<TextView android:id="@+id/statusText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Import a track to begin." android:textSize="12sp" android:textColor="#CCCCDD" android:maxLines="2" android:gravity="center_horizontal" />
 	<TextView android:id="@+id/connectionText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="No Launchpad connected" android:textSize="11sp" android:textColor="#8888AA" android:gravity="center_horizontal" />
 
-	<!-- Inset so LED/SOUND side pills never cover the wave; content stays centered -->
 	<FrameLayout
 		android:id="@+id/waveformContainer"
 		android:layout_width="match_parent"
 		android:layout_height="0dp"
 		android:layout_marginTop="6dp"
-		android:layout_marginStart="52dp"
-		android:layout_marginEnd="52dp"
+		android:layout_marginStart="8dp"
+		android:layout_marginEnd="8dp"
 		android:layout_weight="1"
 		android:minHeight="120dp"
 		android:background="#0F0F1A">
@@ -49,20 +48,20 @@
 			android:layout_gravity="center" />
 	</FrameLayout>
 
-	<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:layout_marginStart="52dp" android:layout_marginEnd="52dp" android:orientation="horizontal" android:gravity="center_vertical">
+	<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:layout_marginStart="8dp" android:layout_marginEnd="8dp" android:orientation="horizontal" android:gravity="center_vertical">
 		<Button android:id="@+id/restartButton" android:layout_width="40dp" android:layout_height="36dp" android:text="R" android:textSize="12sp" />
 		<SeekBar android:id="@+id/playbackSeekBar" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="4dp" />
 	</LinearLayout>
 
-	<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:layout_marginStart="52dp" android:layout_marginEnd="52dp" android:orientation="horizontal">
+	<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:layout_marginStart="8dp" android:layout_marginEnd="8dp" android:orientation="horizontal">
 		<Button android:id="@+id/zoomOutButton" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="- Zoom" android:textSize="12sp" />
 		<Button android:id="@+id/playPauseButton" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="2" android:layout_marginStart="4dp" android:layout_marginEnd="4dp" android:text="Play" android:textSize="13sp" />
 		<Button android:id="@+id/zoomInButton" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:text="+ Zoom" android:textSize="12sp" />
 	</LinearLayout>
 
-	<Button android:id="@+id/dropMarkButton" android:layout_width="match_parent" android:layout_height="40dp" android:layout_marginTop="4dp" android:layout_marginStart="52dp" android:layout_marginEnd="52dp" android:text="Mark Cut Here" android:textSize="13sp" />
+	<Button android:id="@+id/dropMarkButton" android:layout_width="match_parent" android:layout_height="40dp" android:layout_marginTop="4dp" android:layout_marginStart="8dp" android:layout_marginEnd="8dp" android:text="Mark Cut Here" android:textSize="13sp" />
 
-	<ScrollView android:id="@+id/debugScroll" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="4dp" android:layout_marginStart="52dp" android:layout_marginEnd="52dp" android:background="#1A1A2E">
+	<ScrollView android:id="@+id/debugScroll" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="4dp" android:layout_marginStart="8dp" android:layout_marginEnd="8dp" android:background="#1A1A2E">
 		<TextView android:id="@+id/debugLog" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="4dp" android:fontFamily="monospace" android:textColor="#00ADB5" android:textIsSelectable="true" android:textSize="10sp" />
 	</ScrollView>
 </LinearLayout>
