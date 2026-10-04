@@ -216,6 +216,13 @@ public class WaveformView extends View {
         computeDoublesForAllZoomLevels(numFrames, frameGains);
         mHeightsAtThisZoomLevel = null;
         mHasData = true;
+        // Must invalidate or the view stays blank after import until some other
+        // layout pass happens (drawer open alone is not enough on many devices).
+        if (getMeasuredWidth() > 0) {
+            recomputeHeights(mDensity > 0 ? mDensity : getResources().getDisplayMetrics().density);
+        } else {
+            post(() -> recomputeHeights(getResources().getDisplayMetrics().density));
+        }
     }
 
     public boolean isInitialized() {
