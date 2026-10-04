@@ -134,10 +134,15 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				waveformView.setAudioData(
 					gainData.numFrames, gainData.frameGains, gainData.sampleRate, gainData.samplesPerFrame
 				)
+				// Force paint after import — setAudioData alone does not always trigger onDraw
+				waveformView.invalidate()
 				statusText.text = "Decoded: ${audio.totalDurationMs}ms. Play, then tap 'Mark Cut Here' to cut."
 				playbackSeekBar.max = audio.totalDurationMs
 				setupPlayer()
-				waveformView.post { refreshMarkers() }
+				waveformView.post {
+					waveformView.invalidate()
+					refreshMarkers()
+				}
 			}
 		}
 
@@ -167,8 +172,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 	}
 
-	// ---- Player setup ----
-
 	private fun setupPlayer() {
 		val path = viewModel.cachedFilePath ?: return
 		exoController?.release()
@@ -194,13 +197,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		if (controller.isPlaying) {
 			controller.pause()
 		} else {
-			// Resume from wherever playback actually left off. This used to jump to
-			// session.lastMarkMs() instead, which made sense back when dropMark() always
-			// paused playback (lastMarkMs() ~= where you'd just paused) -- but that
-			// auto-pause was removed so marking wouldn't interrupt playback. For a
-			// heavily-marked project (many marks packed near the end, e.g. an import),
-			// lastMarkMs() sits close to the very end of the track, so every Play press
-			// jumped there, played a sliver, and hit ENDED almost immediately.
 			controller.playFrom(controller.currentPositionMs())
 		}
 	}
@@ -222,18 +218,14 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			.show()
 	}
 
-	// ---- Marker handles: one draggable MarkerView per mark (except the fixed track-start mark) ----
-
 	private fun refreshMarkers() {
 		val session = viewModel.markingSession.value ?: return
 		if (!waveformView.hasSoundFile()) return
 
-		// Derive mark positions from segments: [0] + each segment's end.
 		val markPositions = mutableListOf(0)
 		session.segments().forEach { markPositions.add(it.endMs) }
 		markOverlay.markPositionsMs = markPositions
 
-		// Rebuild marker handles for all draggable marks (index 1..last).
 		markerViews.forEach { waveformContainer.removeView(it) }
 		markerViews.clear()
 
@@ -257,9 +249,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 	}
 
-	/** Called when Place long-presses a cut to jump here. Scrolls the waveform so
-	 * the mark ending that segment is roughly centered, and flashes its handle a
-	 * different color for a few seconds so it's easy to find and drag. */
 	private fun jumpAndHighlight(segmentIndex: Int) {
 		val session = viewModel.markingSession.value ?: return
 		if (segmentIndex !in session.segments().indices) return
@@ -326,8 +315,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		override fun markerDraw() {}
 	}
 
-	// ---- WaveformView.WaveformListener: background pan/zoom ----
-
 	override fun waveformTouchStart(x: Float) {
 		touchStartX = x
 		touchInitialOffset = waveformView.offset
@@ -352,8 +339,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 	override fun waveformZoomOut() {
 		waveformView.zoomOut(); waveformView.invalidate(); refreshMarkers()
 	}
-
-	// ---- Project save/resume ----
 
 	private fun showSaveProjectDialog() {
 		if (viewModel.cachedFilePath == null) {
@@ -415,8 +400,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 	}
 
-	// ---- Import ----
-
 	private fun decodeAndLoad(uri: Uri) {
 		val context = requireContext().applicationContext
 		activity?.runOnUiThread { statusText.text = "Copying file\u2026" }
@@ -450,11 +433,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 		return tempFile
 	}
-
-	// ---- Import pre-cut tracks / Unipack: both funnel into MultiClipImporter, which
-	// concatenates whatever's picked into one synthetic timeline with auto-generated
-	// marks -- reusing the exact same MarkingSession/Place/Splice pipeline as anything
-	// cut by hand, with zero changes to that pipeline. ----
 
 	private fun copyUriToUniqueCacheFile(context: android.content.Context, uri: Uri, index: Int): java.io.File {
 		val displayName = queryDisplayName(context, uri) ?: "import_$index"
@@ -521,17 +499,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 	}
 
-	/** Loose-files import: user picks a FOLDER (not a zip) containing info/keySound/
-	 * sounds/keyLed directly -- e.g. a Unipack someone already unzipped, or one being
-	 * hand-assembled. UnipackReader.read() already works on a plain folder either way,
-	 * so this just needs to get that folder's contents onto local disk first, since a
-	 * SAF tree Uri isn't a java.io.File and can't be read the same way.
-	 *
-	 * If the picked folder is missing keySound+sounds, or missing keyLed, this asks
-	 * whether to pull the missing piece from a second folder instead of just failing --
-	 * covers loading a pack that has its keyLED files organized separately from its
-	 * audio, without needing a whole separate "Import keySound" / "Import keyLED"
-	 * screen with its own parsing logic. */
 	private fun importUnipackFolder(treeUri: Uri) {
 		val context = requireContext().applicationContext
 		statusText.text = "Importing Unipack folder\u2026"
@@ -565,9 +532,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 	}
 
-	/** Checks the two pieces this app actually needs in order -- audio first (nothing's
-	 * importable without it), then keyLed -- prompting to fill in whichever's missing
-	 * from a second folder before finally importing. */
 	private fun checkAudioThenKeyLedThenFinish(extractDir: java.io.File) {
 		val hasKeySound = extractDir.listFiles()?.any { it.isFile && it.name.equals("keySound", ignoreCase = true) } == true
 		val hasSounds = extractDir.listFiles()?.any { it.isDirectory && it.name.equals("sounds", ignoreCase = true) } == true
@@ -615,8 +579,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			.show()
 	}
 
-	/** Merges a second picked folder's keySound file + sounds folder into [extractDir],
-	 * then re-checks for keyLed the same as the normal path would. */
 	private fun mergeAudioFolderAndContinue(pickedUri: Uri, extractDir: java.io.File) {
 		val context = requireContext().applicationContext
 		statusText.text = "Adding keySound/sounds\u2026"
@@ -643,9 +605,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 	}
 
-	/** Merges a second picked folder's keyLed files into [extractDir]/keyLed, then
-	 * finishes the import. Accepts either a folder that directly contains a "keyLed"
-	 * subfolder, or the keyLed folder itself picked directly. */
 	private fun mergeKeyLedFolderAndContinue(pickedUri: Uri, extractDir: java.io.File) {
 		val context = requireContext().applicationContext
 		statusText.text = "Adding keyLED files\u2026"
@@ -681,10 +640,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 	}
 
-	/** Shared by both import paths above once the pack's files are sitting on local
-	 * disk under [extractDir] -- whether that came from unzipping or from copying a
-	 * picked folder makes no difference from here on. Runs on a background thread;
-	 * only touches the UI via runOnUiThread. */
 	private fun importFromExtractedDir(context: android.content.Context, extractDir: java.io.File) {
 		val read = com.bobbypfreely.lpbf.unipack.UnipackReader.read(extractDir)
 
@@ -701,10 +656,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				)?.let { file ->
 					try {
 						val parsed = com.bobbypfreely.lpbf.lightshow.KeyLedReader.parse(file)
-						// KeyLedReader now captures "mc"/"l" (side/scene-launch button)
-						// content too, so an existing-but-empty parse means something
-						// genuinely unrecognized was in the file -- still worth surfacing
-						// rather than looking like silent data loss.
 						if (parsed.isEmpty() && file.length() > 0) unparseableKeyLedCount++
 						parsed
 					} catch (e: Exception) {
@@ -718,6 +669,8 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				filePath = soundFile.absolutePath,
 				button = entry.button,
 				rawLedEvents = rawLedEvents,
+				loop = entry.loop,
+				wormhole = entry.wormhole,
 			)
 		}
 		if (sources.isEmpty()) {
@@ -728,7 +681,10 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		val result = com.bobbypfreely.lpbf.audio.MultiClipImporter.buildConcatenatedImport(sources, context.cacheDir)
 		activity?.runOnUiThread {
 			viewModel.applyMultiClipImport(result)
-			val summary = StringBuilder("Imported Unipack '${read.info.title}' -- ${result.buttons.size} cut(s).")
+			// Drive pad labels + future playback from real performance order when present
+			viewModel.setAutoPlay(read.autoPlay)
+			val apNote = if (read.autoPlay.isEmpty()) " (no autoPlay — labels use map order)" else " autoPlay=${read.autoPlay.size} presses"
+			val summary = StringBuilder("Imported Unipack '${read.info.title}' -- ${result.buttons.size} cut(s).$apNote")
 			val lightshowCount = result.patterns.count { it != null }
 			if (lightshowCount > 0) {
 				summary.append(" $lightshowCount with an existing lightshow.")
@@ -751,10 +707,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 	}
 
-	/** Copies a SAF-picked folder tree (content:// -- info/keySound/sounds/keyLed as
-	 * loose files, possibly nested one level like a zip sometimes is) into a real
-	 * cache folder on disk, mirroring extractZip()'s output layout exactly so
-	 * UnipackReader.read() can't tell the difference. */
 	private fun copyDocumentTreeToCache(context: android.content.Context, treeUri: Uri): java.io.File {
 		val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
 			?: error("Could not open the selected folder")
