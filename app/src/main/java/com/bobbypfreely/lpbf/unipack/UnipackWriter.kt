@@ -11,6 +11,8 @@ import java.util.zip.ZipOutputStream
  * 1-indexed chain/x/y on disk, same keyLed/ folder convention -- so anything written
  * here re-imports cleanly and plays on real Unipad/Launchpad hardware.
  *
+ * Also writes `autoPlay` from mapped cut order + durations (AutoPlayWriter).
+ *
  * keySound line on disk (1-indexed):
  *   chain  x  y  soundFileName  [loop]  [wormhole]
  *
@@ -38,6 +40,7 @@ object UnipackWriter {
 		val keyLedText: String?,
 		val loop: Int = 1,
 		val wormhole: Int = -1,      // 0-indexed chain, or -1 for none
+		val durationMs: Int = 0,     // used for autoPlay delays
 	)
 
 	fun write(
@@ -57,6 +60,13 @@ object UnipackWriter {
 			zip.putNextEntry(ZipEntry("keySound"))
 			zip.write(buildKeySoundText(entries).toByteArray(Charsets.UTF_8))
 			zip.closeEntry()
+
+			val autoPlayText = AutoPlayWriter.buildFromEntries(entries)
+			if (autoPlayText.isNotBlank()) {
+				zip.putNextEntry(ZipEntry("autoPlay"))
+				zip.write(autoPlayText.toByteArray(Charsets.UTF_8))
+				zip.closeEntry()
+			}
 
 			entries.forEach { e ->
 				zip.putNextEntry(ZipEntry("sounds/${e.soundFileName}"))
