@@ -18,6 +18,11 @@ import com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
 import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 
+/**
+ * Shell with no side/bottom pills. Top bar first-press opens drawers:
+ * PLAY = clean grid, SOUND = right map drawer, LED = left lights drawer,
+ * WAVE = bottom waveform, HYBRID = hybrid mode.
+ */
 class MainActivity : AppCompatActivity() {
 
 	private lateinit var viewModel: ProjectViewModel
@@ -32,8 +37,8 @@ class MainActivity : AppCompatActivity() {
 	private var leftOpen = false
 	private var rightOpen = false
 	private var bottomOpen = false
-	private val baseSideMarginDp = 56
-	private val baseBottomMarginDp = 56
+	private val baseSideMarginDp = 12
+	private val baseBottomMarginDp = 12
 	private val drawerWidthDp = 240
 	private val bottomDrawerHeightDp = 480
 	private val soundLines = mutableListOf<String>()
@@ -83,22 +88,45 @@ class MainActivity : AppCompatActivity() {
 		}
 		viewModel.isPlaceTabActive = true
 		viewModel.enterUiMode(ProjectViewModel.UiMode.PLAY)
-		findViewById<View>(R.id.leftPillHandle).setOnClickListener { toggleLeft() }
-		findViewById<View>(R.id.rightPillHandle).setOnClickListener { toggleRight() }
-		findViewById<View>(R.id.bottomPillHandle).setOnClickListener { toggleBottom() }
-		findViewById<View?>(R.id.btnCloseLeft)?.setOnClickListener { if (leftOpen) toggleLeft() }
-		findViewById<View?>(R.id.btnCloseRight)?.setOnClickListener { if (rightOpen) toggleRight() }
-		findViewById<View?>(R.id.btnCloseBottom)?.setOnClickListener { if (bottomOpen) toggleBottom() }
+
+		findViewById<View?>(R.id.btnCloseLeft)?.setOnClickListener { if (leftOpen) setLeftOpen(false) }
+		findViewById<View?>(R.id.btnCloseRight)?.setOnClickListener { if (rightOpen) setRightOpen(false) }
+		findViewById<View?>(R.id.btnCloseBottom)?.setOnClickListener { if (bottomOpen) setBottomOpen(false) }
 		findViewById<View?>(R.id.btnExportUnipack)?.setOnClickListener { exportUnipack() }
-		findViewById<View?>(R.id.btnModeHybrid)?.setOnClickListener { viewModel.enterUiMode(ProjectViewModel.UiMode.HYBRID) }
-		findViewById<View?>(R.id.btnModeMap)?.setOnClickListener { viewModel.enterUiMode(ProjectViewModel.UiMode.EDIT) }
-		findViewById<View?>(R.id.btnModeLights)?.setOnClickListener { viewModel.enterUiMode(ProjectViewModel.UiMode.LIGHTS) }
+
+		findViewById<View?>(R.id.btnTopPlay)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.PLAY)
+			setLeftOpen(false); setRightOpen(false); setBottomOpen(false)
+		}
+		findViewById<View?>(R.id.btnTopMap)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.EDIT)
+			setRightOpen(true); setLeftOpen(false)
+		}
+		findViewById<View?>(R.id.btnTopLights)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.LIGHTS)
+			setLeftOpen(true); setRightOpen(false)
+		}
+		findViewById<View?>(R.id.btnTopWave)?.setOnClickListener {
+			setBottomOpen(true)
+		}
+		findViewById<View?>(R.id.btnModeHybrid)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.HYBRID)
+		}
+		findViewById<View?>(R.id.btnModeMap)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.EDIT)
+			setRightOpen(true)
+		}
+		findViewById<View?>(R.id.btnModeLights)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.LIGHTS)
+			setLeftOpen(true)
+		}
 		findViewById<View?>(R.id.btnAutoPlayToggle)?.setOnClickListener {
 			viewModel.toggleAutoPlayEnabled(); refreshSideLists(); updateModeChrome()
 		}
 		findViewById<View?>(R.id.btnGuide)?.setOnClickListener {
 			viewModel.toggleGuideMode(); refreshSideLists(); updateModeChrome()
 		}
+
 		viewModel.autoPlayEnabled.observe(this) { refreshSideLists(); updateModeChrome() }
 		viewModel.guideMode.observe(this) { refreshSideLists(); updateModeChrome() }
 		viewModel.segmentVersion.observe(this) { refreshSideLists() }
@@ -151,10 +179,10 @@ class MainActivity : AppCompatActivity() {
 	private fun applyUiMode(mode: ProjectViewModel.UiMode?) {
 		val m = mode ?: ProjectViewModel.UiMode.PLAY
 		modeLabel.text = when (m) {
-			ProjectViewModel.UiMode.PLAY -> "PLAY  |  top 1"
-			ProjectViewModel.UiMode.EDIT -> "MAP  |  top 2"
-			ProjectViewModel.UiMode.HYBRID -> "HYBRID  |  top 4"
-			ProjectViewModel.UiMode.LIGHTS -> "LIGHTS  |  top 3"
+			ProjectViewModel.UiMode.PLAY -> "PLAY"
+			ProjectViewModel.UiMode.EDIT -> "MAP / SOUND"
+			ProjectViewModel.UiMode.HYBRID -> "HYBRID"
+			ProjectViewModel.UiMode.LIGHTS -> "LIGHTS / LED"
 		}
 		modeLabel.setTextColor(when (m) {
 			ProjectViewModel.UiMode.PLAY -> 0xFF00ADB5.toInt()
@@ -164,10 +192,10 @@ class MainActivity : AppCompatActivity() {
 		})
 		when (m) {
 			ProjectViewModel.UiMode.PLAY -> { }
-			ProjectViewModel.UiMode.EDIT -> { if (!rightOpen) toggleRight(); if (leftOpen) toggleLeft() }
+			ProjectViewModel.UiMode.EDIT -> { if (!rightOpen) setRightOpen(true); if (leftOpen) setLeftOpen(false) }
 			ProjectViewModel.UiMode.HYBRID -> { }
 			ProjectViewModel.UiMode.LIGHTS -> {
-				if (!leftOpen) toggleLeft(); if (rightOpen) toggleRight(); ensureLightshowFragment()
+				if (!leftOpen) setLeftOpen(true); if (rightOpen) setRightOpen(false); ensureLightshowFragment()
 			}
 		}
 		refreshSideLists()
@@ -217,11 +245,11 @@ class MainActivity : AppCompatActivity() {
 		ledEditor.setText(ledLines.joinToString("\n"))
 		soundSummary?.setOnClickListener {
 			if (soundLines.isEmpty()) return@setOnClickListener
-			if (!bottomOpen) toggleBottom()
+			if (!bottomOpen) setBottomOpen(true)
 			val labels = soundLines.mapIndexed { i, s -> "Cut ${i + 1}: $s" }.toTypedArray()
 			AlertDialog.Builder(this).setTitle("Edit cut in waveform")
 				.setItems(labels) { _, which ->
-					if (!bottomOpen) toggleBottom()
+					if (!bottomOpen) setBottomOpen(true)
 					viewModel.requestJumpToMark(which)
 				}.setNegativeButton("Cancel", null).show()
 		}
@@ -245,7 +273,7 @@ class MainActivity : AppCompatActivity() {
 			padNums.forEach { (pad, nums) -> launchpadGrid.setPadLit(pad.first, pad.second, litColor, nums.joinToString(" ")) }
 		} else {
 			val padNums = LinkedHashMap<Pair<Int, Int>, MutableList<Int>>()
-				var n = 0
+			var n = 0
 			session?.segments()?.forEach { seg ->
 				val b = seg.button ?: return@forEach
 				if (b.chain != activeChain) return@forEach
@@ -281,32 +309,36 @@ class MainActivity : AppCompatActivity() {
 			}.setNegativeButton("Cancel", null).show()
 	}
 
-	private fun toggleLeft() {
-		leftOpen = !leftOpen
-		leftDrawer.visibility = if (leftOpen) View.VISIBLE else View.GONE
-		if (leftOpen) ensureLightshowFragment()
-		findViewById<TextView?>(R.id.leftPillLabel)?.text = if (leftOpen) "CLOSE" else "LED"
-		// Pill sits on top of drawer options — hide it while open so options are uncovered
-		findViewById<View?>(R.id.leftPillHandle)?.visibility = if (leftOpen) View.GONE else View.VISIBLE
+	private fun setLeftOpen(open: Boolean) {
+		if (leftOpen == open) {
+			if (open) ensureLightshowFragment()
+			return
+		}
+		leftOpen = open
+		leftDrawer.visibility = if (open) View.VISIBLE else View.GONE
+		if (open) ensureLightshowFragment()
 		updateCenterInsets(); refreshSideLists()
 	}
-	private fun toggleRight() {
-		rightOpen = !rightOpen
-		rightDrawer.visibility = if (rightOpen) View.VISIBLE else View.GONE
-		findViewById<TextView?>(R.id.rightPillLabel)?.text = if (rightOpen) "CLOSE" else "SOUND"
-		findViewById<View?>(R.id.rightPillHandle)?.visibility = if (rightOpen) View.GONE else View.VISIBLE
+
+	private fun setRightOpen(open: Boolean) {
+		if (rightOpen == open) return
+		rightOpen = open
+		rightDrawer.visibility = if (open) View.VISIBLE else View.GONE
 		updateCenterInsets(); refreshSideLists()
 	}
-	private fun toggleBottom() {
-		bottomOpen = !bottomOpen
-		bottomDrawer.visibility = if (bottomOpen) View.VISIBLE else View.GONE
-		viewModel.isMarkAndCutTabActive = bottomOpen
-		if (bottomOpen) ensureWaveformFragment()
-		findViewById<TextView?>(R.id.bottomPillLabel)?.text = if (bottomOpen) "CLOSE" else "WAVEFORM"
-		// Keep CLOSE pill visible under the drawer so user can close; side pills stay (they are side chrome)
-		findViewById<View?>(R.id.bottomPillHandle)?.visibility = View.VISIBLE
+
+	private fun setBottomOpen(open: Boolean) {
+		if (bottomOpen == open) {
+			if (open) ensureWaveformFragment()
+			return
+		}
+		bottomOpen = open
+		bottomDrawer.visibility = if (open) View.VISIBLE else View.GONE
+		viewModel.isMarkAndCutTabActive = open
+		if (open) ensureWaveformFragment()
 		updateCenterInsets()
 	}
+
 	private fun updateCenterInsets() {
 		val density = resources.displayMetrics.density
 		val left = if (leftOpen) (drawerWidthDp * density).toInt() else (baseSideMarginDp * density).toInt()
