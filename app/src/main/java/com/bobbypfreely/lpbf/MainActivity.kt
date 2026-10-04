@@ -21,10 +21,8 @@ import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
 import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 
 /**
- * Shell with no side/bottom pills. Top bar first-press opens drawers:
- * PLAY = clean grid, SOUND = right map drawer, LED = left lights drawer,
- * WAVE = bottom waveform, HYBRID = hybrid mode.
- * AP plays the AutoPlay sequence (or mapped cuts in order).
+ * Shell with no side/bottom pills. Top bar first-press opens drawers.
+ * AP plays autoPlay file sequence, or all cuts in mark order when none.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -112,9 +110,7 @@ class MainActivity : AppCompatActivity() {
 			viewModel.enterUiMode(ProjectViewModel.UiMode.LIGHTS)
 			setLeftOpen(true); setRightOpen(false)
 		}
-		findViewById<View?>(R.id.btnTopWave)?.setOnClickListener {
-			setBottomOpen(true)
-		}
+		findViewById<View?>(R.id.btnTopWave)?.setOnClickListener { setBottomOpen(true) }
 		findViewById<View?>(R.id.btnModeHybrid)?.setOnClickListener {
 			viewModel.enterUiMode(ProjectViewModel.UiMode.HYBRID)
 		}
@@ -329,7 +325,7 @@ class MainActivity : AppCompatActivity() {
 			}.setNegativeButton("Cancel", null).show()
 	}
 
-	/** Play AutoPlay sequence (timed presses) or mapped cuts in order. AP button starts/stops. */
+	/** Play AutoPlay sequence, or all cuts in mark order when no autoPlay file. */
 	private fun startAutoPlaySequence() {
 		stopAutoPlaySequence()
 		val session = viewModel.markingSession.value
@@ -351,35 +347,35 @@ class MainActivity : AppCompatActivity() {
 			android.util.Log.i("MainActivity", "AutoPlay sequence: ${presses.size} presses")
 			return
 		}
+		// No autoPlay file: play every cut in mark order (mapped or not)
 		if (session == null || session.segmentCount == 0) {
-			android.util.Log.i("MainActivity", "AutoPlay: nothing mapped yet")
+			modeLabel.text = "AP: mark cuts first"
+			android.util.Log.i("MainActivity", "AutoPlay: no cuts yet")
 			return
 		}
-		val mapped = session.segments().mapIndexedNotNull { i, seg ->
-			val b = seg.button ?: return@mapIndexedNotNull null
-			Triple(i, seg, b)
-		}
-		if (mapped.isEmpty()) {
-			android.util.Log.i("MainActivity", "AutoPlay: no mapped cuts")
-			return
-		}
+		val cuts = session.segments()
 		autoPlayRunning = true
 		updateModeChrome()
 		var acc = 0L
-		mapped.forEachIndexed { idx, (_, seg, b) ->
+		cuts.forEachIndexed { idx, seg ->
 			val delay = acc
 			val hold = seg.durationMs.toLong().coerceAtLeast(200L)
+			val b = seg.button
 			autoPlayHandler.postDelayed({
 				if (!autoPlayRunning) return@postDelayed
-				launchpadGrid.setPadLit(b.x, b.y, 0xFF00ADB5.toInt(), "${idx + 1}")
+				if (b != null) {
+					launchpadGrid.setPadLit(b.x, b.y, 0xFF00ADB5.toInt(), "${idx + 1}")
+				} else {
+					modeLabel.text = "AP cut ${idx + 1}/${cuts.size}"
+				}
 				playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
-				if (idx == mapped.lastIndex) {
+				if (idx == cuts.lastIndex) {
 					autoPlayHandler.postDelayed({ stopAutoPlaySequence() }, hold)
 				}
 			}, delay)
 			acc += hold
 		}
-		android.util.Log.i("MainActivity", "AutoPlay fallback: ${mapped.size} mapped cuts")
+		android.util.Log.i("MainActivity", "AutoPlay fallback: ${cuts.size} cuts (no autoPlay file)")
 	}
 
 	private fun fireAutoPlayPress(press: com.bobbypfreely.lpbf.unipack.AutoPlayPress) {
