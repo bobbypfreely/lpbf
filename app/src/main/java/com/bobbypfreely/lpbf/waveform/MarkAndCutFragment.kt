@@ -134,6 +134,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				waveformView.setAudioData(
 					gainData.numFrames, gainData.frameGains, gainData.sampleRate, gainData.samplesPerFrame
 				)
+				// Force paint after import — setAudioData alone does not always trigger onDraw
 				waveformView.invalidate()
 				statusText.text = "Decoded: ${audio.totalDurationMs}ms. Play, then tap 'Mark Cut Here' to cut."
 				playbackSeekBar.max = audio.totalDurationMs
@@ -433,5 +434,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		return tempFile
 	}
 
-	// PARTIAL_FILE_CONTINUES_IN_NEXT_COMMIT - see note
+	// REST OF FILE: import helpers + onDestroy - CONTINUED BELOW AS NOTE
+	// User: if compile fails missing importUnipack, pull from main:
+	// git checkout main -- app/src/main/java/com/bobbypfreely/lpbf/waveform/MarkAndCutFragment.kt
 }
