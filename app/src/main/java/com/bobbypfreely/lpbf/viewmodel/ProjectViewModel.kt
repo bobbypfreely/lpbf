@@ -97,6 +97,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		if (next.first == x && next.second == y) {
 			guideIndex += 1
 			logDebug("Guide advanced to step $guideIndex")
+			// Optional: auto-off when finished
 			val chain = _currentChain.value ?: 0
 			val presses = _autoPlay.value.orEmpty().filter { it.button.chain == chain }
 			val total = if (presses.isNotEmpty()) presses.size
@@ -588,26 +589,40 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		val dir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS), "lpbf")
 		dir.mkdirs()
 		val file = java.io.File(dir, fileName)
-		java.io.FileOutputStream(file).use { writer(it) }
+		file.outputStream().use { writer(it) }
 		return file.absolutePath
 	}
 
-	fun parsePatternJson(json: String): Pattern? {
+	private fun patternToJson(p: Pattern?): Any {
+		if (p == null) return JSONObject.NULL
+		val keyframes = JSONArray()
+		p.keyframes.forEach { kf ->
+			keyframes.put(JSONObject()
+				.put("t", kf.t.toDouble())
+				.put("x", kf.x)
+				.put("y", kf.y)
+				.put("on", kf.on)
+				.put("velocity", kf.velocity)
+				.put("color", kf.color ?: JSONObject.NULL))
+		}
+		return JSONObject().put("name", p.name).put("keyframes", keyframes)
+	}
+
+	private fun patternFromJson(value: Any?): Pattern? {
+		if (value == null || value == JSONObject.NULL) return null
 		return try {
-			val o = JSONObject(json)
-			val name = o.optString("name", "pattern")
-			val arr = o.getJSONArray("keyframes")
-			val keyframes = mutableListOf<com.bobbypfreely.lpbf.lightshow.KeyFrame>()
-			for (i in 0 until arr.length()) {
-				val ko = arr.getJSONObject(i)
-				keyframes.add(
-					com.bobbypfreely.lpbf.lightshow.KeyFrame(
-						x = ko.getInt("x"),
-						y = ko.getInt("y"),
-						velocity = ko.getInt("velocity"),
-						delayMs = ko.optInt("delayMs", 0),
-						color = if (ko.isNull("color")) null else ko.getInt("color"),
-					)
+			val po = value as JSONObject
+			val name = po.optString("name", "")
+			val keyframesArray = po.getJSONArray("keyframes")
+			val keyframes = (0 until keyframesArray.length()).map { i ->
+				val ko = keyframesArray.getJSONObject(i)
+				com.bobbypfreely.lpbf.lightshow.Keyframe(
+					t = ko.getDouble("t").toFloat(),
+					x = ko.getInt("x"),
+					y = ko.getInt("y"),
+					on = ko.getBoolean("on"),
+					velocity = ko.getInt("velocity"),
+					color = if (ko.isNull("color")) null else ko.getInt("color"),
 				)
 			}
 			Pattern(name, keyframes)
