@@ -42,8 +42,8 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 	private data class DragState(val markIndex: Int, val originalMs: Int, val startRawX: Float)
 	private var dragState: DragState? = null
 
-	private var highlightedMarkMs: Int? = null
-	private val highlightClearHandler = android.os.Handler(android.os.Looper.getMainLooper())
+		private var highlightedMarkMs: Int? = null
+		private val highlightClearHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
 	private var isUserSeeking = false
 	private val positionPollHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -434,7 +434,319 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		return tempFile
 	}
 
-	// REST OF FILE: import helpers + onDestroy - CONTINUED BELOW AS NOTE
-	// User: if compile fails missing importUnipack, pull from main:
-	// git checkout main -- app/src/main/java/com/bobbypfreely/lpbf/waveform/MarkAndCutFragment.kt
+	private fun copyUriToUniqueCacheFile(context: android.content.Context, uri: Uri, index: Int): java.io.File {
+		val displayName = queryDisplayName(context, uri) ?: "import_$index"
+		val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+		val tempFile = java.io.File(context.cacheDir, "lpbf_multi_${System.currentTimeMillis()}_${index}_$safeName")
+		val input = context.contentResolver.openInputStream(uri) ?: error("Could not open input stream for $uri")
+		input.use { inStream ->
+			tempFile.outputStream().use { outStream -> inStream.copyTo(outStream) }
+		}
+		return tempFile
+	}
+
+	private fun queryDisplayName(context: android.content.Context, uri: Uri): String? {
+		return try {
+			context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+				if (cursor.moveToFirst()) {
+					val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+					if (idx >= 0) cursor.getString(idx) else null
+				} else null
+			}
+		} catch (e: Exception) {
+			null
+		}
+	}
+
+	private fun importPreCutTracks(uris: List<Uri>) {
+		val context = requireContext().applicationContext
+		statusText.text = "Importing ${uris.size} track(s)\u2026"
+		thread(name = "lpbf-import-precut") {
+			try {
+				val sources = uris.mapIndexed { index, uri ->
+					val file = copyUriToUniqueCacheFile(context, uri, index)
+					com.bobbypfreely.lpbf.audio.ImportClipSource(filePath = file.absolutePath, button = null)
+				}
+				val result = com.bobbypfreely.lpbf.audio.MultiClipImporter.buildConcatenatedImport(sources, context.cacheDir)
+				activity?.runOnUiThread {
+					viewModel.applyMultiClipImport(result)
+					statusText.text = if (result.skipped.isEmpty()) {
+						"Imported ${result.buttons.size} pre-cut track(s)."
+					} else {
+						"Imported ${result.buttons.size} track(s), skipped ${result.skipped.size}: ${result.skipped.joinToString("; ")}"
+					}
+				}
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "Pre-cut import failed", e)
+				activity?.runOnUiThread { statusText.text = "Import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
+			}
+		}
+	}
+
+	private fun importUnipack(uri: Uri) {
+		val context = requireContext().applicationContext
+		statusText.text = "Importing Unipack\u2026"
+		thread(name = "lpbf-import-unipack") {
+			try {
+				val zipCopy = copyUriToUniqueCacheFile(context, uri, 0)
+				val extractDir = java.io.File(context.cacheDir, "lpbf_unipack_extract_${System.currentTimeMillis()}")
+				com.bobbypfreely.lpbf.unipack.UnipackReader.extractZip(zipCopy, extractDir)
+				importFromExtractedDir(context, extractDir)
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "Unipack import failed", e)
+				activity?.runOnUiThread { statusText.text = "Unipack import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
+			}
+		}
+	}
+
+	private fun importUnipackFolder(treeUri: Uri) {
+		val context = requireContext().applicationContext
+		statusText.text = "Importing Unipack folder\u2026"
+		thread(name = "lpbf-import-unipack-folder") {
+			try {
+				val extractDir = copyDocumentTreeToCache(context, treeUri)
+				checkAudioThenKeyLedThenFinish(extractDir)
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "Unipack folder import failed", e)
+				activity?.runOnUiThread { statusText.text = "Unipack folder import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
+			}
+		}
+	}
+
+	private enum class MergeKind { AUDIO, KEYLED }
+	private var pendingUnipackExtractDir: java.io.File? = null
+	private var pendingMergeKind: MergeKind? = null
+
+	private val pickMergeFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+		val extractDir = pendingUnipackExtractDir
+		val kind = pendingMergeKind
+		pendingUnipackExtractDir = null
+		pendingMergeKind = null
+		if (uri == null || extractDir == null || kind == null) {
+			if (extractDir != null) finishUnipackImport(extractDir)
+			return@registerForActivityResult
+		}
+		when (kind) {
+			MergeKind.AUDIO -> mergeAudioFolderAndContinue(uri, extractDir)
+			MergeKind.KEYLED -> mergeKeyLedFolderAndContinue(uri, extractDir)
+		}
+	}
+
+	private fun checkAudioThenKeyLedThenFinish(extractDir: java.io.File) {
+		val hasKeySound = extractDir.listFiles()?.any { it.isFile && it.name.equals("keySound", ignoreCase = true) } == true
+		val hasSounds = extractDir.listFiles()?.any { it.isDirectory && it.name.equals("sounds", ignoreCase = true) } == true
+		if (!hasKeySound || !hasSounds) {
+			activity?.runOnUiThread { promptForMissingAudio(extractDir) }
+		} else {
+			checkKeyLedThenFinish(extractDir)
+		}
+	}
+
+	private fun checkKeyLedThenFinish(extractDir: java.io.File) {
+		val hasKeyLed = extractDir.listFiles()?.any { it.isDirectory && it.name.equals("keyLed", ignoreCase = true) } == true
+		if (!hasKeyLed) {
+			activity?.runOnUiThread { promptForMissingKeyLed(extractDir) }
+		} else {
+			finishUnipackImport(extractDir)
+		}
+	}
+
+	private fun promptForMissingAudio(extractDir: java.io.File) {
+		AlertDialog.Builder(requireContext())
+			.setTitle("No keySound/sounds found")
+			.setMessage("This folder is missing the keySound file and/or the sounds folder. Import them from a different location?")
+			.setPositiveButton("Yes") { _, _ ->
+				pendingUnipackExtractDir = extractDir
+				pendingMergeKind = MergeKind.AUDIO
+				pickMergeFolder.launch(null)
+			}
+			.setNegativeButton("Cancel") { _, _ -> statusText.text = "Import cancelled -- nothing playable without audio." }
+			.setCancelable(false)
+			.show()
+	}
+
+	private fun promptForMissingKeyLed(extractDir: java.io.File) {
+		AlertDialog.Builder(requireContext())
+			.setTitle("No keyLED files found")
+			.setMessage("This folder has no keyLed folder. Import keyLED files from a different location too?")
+			.setPositiveButton("Yes") { _, _ ->
+				pendingUnipackExtractDir = extractDir
+				pendingMergeKind = MergeKind.KEYLED
+				pickMergeFolder.launch(null)
+			}
+			.setNegativeButton("No, audio only") { _, _ -> finishUnipackImport(extractDir) }
+			.setCancelable(false)
+			.show()
+	}
+
+	private fun mergeAudioFolderAndContinue(pickedUri: Uri, extractDir: java.io.File) {
+		val context = requireContext().applicationContext
+		statusText.text = "Adding keySound/sounds\u2026"
+		thread(name = "lpbf-merge-audio") {
+			try {
+				val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, pickedUri)
+					?: error("Could not open the selected folder")
+				val keySoundDoc = findChild(root, "keySound", wantDir = false)
+				val soundsDoc = findChild(root, "sounds", wantDir = true)
+				if (keySoundDoc == null || soundsDoc == null) {
+					activity?.runOnUiThread { statusText.text = "That folder doesn't have both a keySound file and a sounds folder." }
+					return@thread
+				}
+				context.contentResolver.openInputStream(keySoundDoc.uri)?.use { input ->
+					java.io.File(extractDir, "keySound").outputStream().use { output -> input.copyTo(output) }
+				}
+				val soundsDir = java.io.File(extractDir, "sounds").apply { mkdirs() }
+				copyDocumentFileTree(context, soundsDoc, soundsDir)
+				checkKeyLedThenFinish(extractDir)
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "Audio merge failed", e)
+				activity?.runOnUiThread { statusText.text = "Couldn't add keySound/sounds: ${e.message}" }
+			}
+		}
+	}
+
+	private fun mergeKeyLedFolderAndContinue(pickedUri: Uri, extractDir: java.io.File) {
+		val context = requireContext().applicationContext
+		statusText.text = "Adding keyLED files\u2026"
+		thread(name = "lpbf-merge-keyled") {
+			try {
+				val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, pickedUri)
+					?: error("Could not open the selected folder")
+				val keyLedSource = findChild(root, "keyLed", wantDir = true) ?: root
+				val keyLedDir = java.io.File(extractDir, "keyLed").apply { mkdirs() }
+				copyDocumentFileTree(context, keyLedSource, keyLedDir)
+				finishUnipackImport(extractDir)
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "keyLed merge failed", e)
+				activity?.runOnUiThread { statusText.text = "Couldn't add keyLED files: ${e.message}. Importing audio only." }
+				finishUnipackImport(extractDir)
+			}
+		}
+	}
+
+	private fun findChild(root: androidx.documentfile.provider.DocumentFile, name: String, wantDir: Boolean): androidx.documentfile.provider.DocumentFile? {
+		return root.listFiles().firstOrNull { it.name?.equals(name, ignoreCase = true) == true && it.isDirectory == wantDir }
+	}
+
+	private fun finishUnipackImport(extractDir: java.io.File) {
+		val context = requireContext().applicationContext
+		thread(name = "lpbf-finish-unipack-import") {
+			try {
+				importFromExtractedDir(context, extractDir)
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "Unipack import failed", e)
+				activity?.runOnUiThread { statusText.text = "Unipack import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
+			}
+		}
+	}
+
+	private fun importFromExtractedDir(context: android.content.Context, extractDir: java.io.File) {
+		val read = com.bobbypfreely.lpbf.unipack.UnipackReader.read(extractDir)
+
+		val occurrenceCount = mutableMapOf<com.bobbypfreely.lpbf.marking.ButtonRef, Int>()
+		var unparseableKeyLedCount = 0
+		val sources = read.entries.map { entry ->
+			val soundFile = java.io.File(read.soundsDir, entry.soundRelativePath)
+			val occurrence = occurrenceCount.getOrDefault(entry.button, 0)
+			occurrenceCount[entry.button] = occurrence + 1
+
+			val rawLedEvents = read.keyLedDir?.let { dir ->
+				com.bobbypfreely.lpbf.lightshow.KeyLedReader.findFile(
+					dir, entry.button.chain, entry.button.x, entry.button.y, occurrence
+				)?.let { file ->
+					try {
+						val parsed = com.bobbypfreely.lpbf.lightshow.KeyLedReader.parse(file)
+						if (parsed.isEmpty() && file.length() > 0) unparseableKeyLedCount++
+						parsed
+					} catch (e: Exception) {
+						android.util.Log.w("MarkAndCutFragment", "Couldn't parse keyLED file ${file.name}", e)
+						null
+					}
+				}
+			}
+
+			com.bobbypfreely.lpbf.audio.ImportClipSource(
+				filePath = soundFile.absolutePath,
+				button = entry.button,
+				rawLedEvents = rawLedEvents,
+				loop = entry.loop,
+				wormhole = entry.wormhole,
+			)
+		}
+		if (sources.isEmpty()) {
+			activity?.runOnUiThread { statusText.text = "Unipack has no sounds mapped -- nothing to import." }
+			return
+		}
+
+		val result = com.bobbypfreely.lpbf.audio.MultiClipImporter.buildConcatenatedImport(sources, context.cacheDir)
+		activity?.runOnUiThread {
+			viewModel.applyMultiClipImport(result)
+			// Drive pad labels + future playback from real performance order when present
+			viewModel.setAutoPlay(read.autoPlay)
+			val apNote = if (read.autoPlay.isEmpty()) " (no autoPlay — labels use map order)" else " autoPlay=${read.autoPlay.size} presses"
+			val summary = StringBuilder("Imported Unipack '${read.info.title}' -- ${result.buttons.size} cut(s).$apNote")
+			val lightshowCount = result.patterns.count { it != null }
+			if (lightshowCount > 0) {
+				summary.append(" $lightshowCount with an existing lightshow.")
+			} else if (read.keyLedDir == null) {
+				summary.append(" No keyLed folder in this pack -- nothing to import there.")
+			}
+			if (unparseableKeyLedCount > 0) {
+				summary.append(" $unparseableKeyLedCount keyLED file(s) had content LPBF couldn't parse -- not imported.")
+			}
+			if (read.info.chainCount > 8) {
+				summary.append(" Note: this pack uses ${read.info.chainCount} chains; Place only exposes chains 1-8 for editing right now.")
+			}
+			if (result.skipped.isNotEmpty()) {
+				summary.append(" Skipped ${result.skipped.size}: ${result.skipped.joinToString("; ")}")
+			}
+			if (read.warnings.isNotEmpty()) {
+				summary.append(" Warnings: ${read.warnings.joinToString("; ")}")
+			}
+			statusText.text = summary.toString()
+		}
+	}
+
+	private fun copyDocumentTreeToCache(context: android.content.Context, treeUri: Uri): java.io.File {
+		val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
+			?: error("Could not open the selected folder")
+		val targetDir = java.io.File(context.cacheDir, "lpbf_unipack_folder_${System.currentTimeMillis()}")
+		targetDir.mkdirs()
+		copyDocumentFileTree(context, root, targetDir)
+		return targetDir
+	}
+
+	private fun copyDocumentFileTree(context: android.content.Context, doc: androidx.documentfile.provider.DocumentFile, targetDir: java.io.File) {
+		doc.listFiles().forEach { child ->
+			val name = child.name ?: return@forEach
+			if (child.isDirectory) {
+				val childDir = java.io.File(targetDir, name)
+				childDir.mkdirs()
+				copyDocumentFileTree(context, child, childDir)
+			} else {
+				val outFile = java.io.File(targetDir, name)
+				context.contentResolver.openInputStream(child.uri)?.use { input ->
+					outFile.outputStream().use { output -> input.copyTo(output) }
+				}
+			}
+		}
+	}
+
+	override fun onResume() {
+		super.onResume()
+		viewModel.isMarkAndCutTabActive = true
+	}
+
+	override fun onPause() {
+		super.onPause()
+		viewModel.isMarkAndCutTabActive = false
+	}
+
+	override fun onDestroyView() {
+		exoController?.release()
+		exoController = null
+		highlightClearHandler.removeCallbacksAndMessages(null)
+		positionPollHandler.removeCallbacksAndMessages(null)
+		super.onDestroyView()
+	}
 }
