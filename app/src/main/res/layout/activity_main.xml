@@ -12,10 +12,10 @@
 		android:layout_width="match_parent"
 		android:layout_height="match_parent"
 		android:layout_gravity="center"
-		android:layout_marginStart="56dp"
-		android:layout_marginEnd="56dp"
+		android:layout_marginStart="12dp"
+		android:layout_marginEnd="12dp"
 		android:layout_marginTop="8dp"
-		android:layout_marginBottom="56dp"
+		android:layout_marginBottom="12dp"
 		android:padding="4dp">
 
 		<LinearLayout
@@ -27,11 +27,11 @@
 			<LinearLayout
 				android:id="@+id/modeBar"
 				android:layout_width="match_parent"
-				android:layout_height="36dp"
+				android:layout_height="40dp"
 				android:orientation="horizontal"
 				android:gravity="center_vertical"
-				android:paddingStart="8dp"
-				android:paddingEnd="8dp">
+				android:paddingStart="4dp"
+				android:paddingEnd="4dp">
 				<TextView
 					android:id="@+id/modeLabel"
 					android:layout_width="0dp"
@@ -43,13 +43,65 @@
 					android:textStyle="bold"
 					android:letterSpacing="0.06" />
 				<TextView
+					android:id="@+id/btnTopPlay"
+					android:layout_width="44dp"
+					android:layout_height="36dp"
+					android:gravity="center"
+					android:text="PLAY"
+					android:textColor="#00ADB5"
+					android:textSize="11sp"
+					android:textStyle="bold"
+					android:contentDescription="Play mode"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:clickable="true"
+					android:focusable="true" />
+				<TextView
+					android:id="@+id/btnTopMap"
+					android:layout_width="48dp"
+					android:layout_height="36dp"
+					android:gravity="center"
+					android:text="SOUND"
+					android:textColor="#81C784"
+					android:textSize="11sp"
+					android:textStyle="bold"
+					android:contentDescription="Open sound map drawer"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:clickable="true"
+					android:focusable="true" />
+				<TextView
+					android:id="@+id/btnTopLights"
+					android:layout_width="40dp"
+					android:layout_height="36dp"
+					android:gravity="center"
+					android:text="LED"
+					android:textColor="#B39DDB"
+					android:textSize="11sp"
+					android:textStyle="bold"
+					android:contentDescription="Open lights drawer"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:clickable="true"
+					android:focusable="true" />
+				<TextView
+					android:id="@+id/btnTopWave"
+					android:layout_width="48dp"
+					android:layout_height="36dp"
+					android:gravity="center"
+					android:text="WAVE"
+					android:textColor="#FF8A80"
+					android:textSize="11sp"
+					android:textStyle="bold"
+					android:contentDescription="Open waveform drawer"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:clickable="true"
+					android:focusable="true" />
+				<TextView
 					android:id="@+id/btnAutoPlayToggle"
-					android:layout_width="52dp"
+					android:layout_width="44dp"
 					android:layout_height="36dp"
 					android:gravity="center"
 					android:text="AP ON"
 					android:textColor="#81C784"
-					android:textSize="11sp"
+					android:textSize="10sp"
 					android:textStyle="bold"
 					android:contentDescription="Toggle AutoPlay labels"
 					android:background="?attr/selectableItemBackgroundBorderless"
@@ -57,12 +109,12 @@
 					android:focusable="true" />
 				<TextView
 					android:id="@+id/btnGuide"
-					android:layout_width="52dp"
+					android:layout_width="48dp"
 					android:layout_height="36dp"
 					android:gravity="center"
 					android:text="GUIDE"
 					android:textColor="#8888AA"
-					android:textSize="11sp"
+					android:textSize="10sp"
 					android:textStyle="bold"
 					android:contentDescription="Guide mode highlights next pad"
 					android:background="?attr/selectableItemBackgroundBorderless"
@@ -73,9 +125,9 @@
 					android:layout_width="48dp"
 					android:layout_height="36dp"
 					android:gravity="center"
-					android:text="MODE"
-					android:textColor="#E0E0FF"
-					android:textSize="11sp"
+					android:text="HYBRID"
+					android:textColor="#FFB74D"
+					android:textSize="10sp"
 					android:textStyle="bold"
 					android:contentDescription="Hybrid mode"
 					android:background="?attr/selectableItemBackgroundBorderless"
@@ -94,29 +146,6 @@
 	</FrameLayout>
 
 	<LinearLayout
-		android:id="@+id/leftPillHandle"
-		android:layout_width="48dp"
-		android:layout_height="140dp"
-		android:layout_gravity="start|center_vertical"
-		android:layout_marginStart="4dp"
-		android:orientation="vertical"
-		android:gravity="center"
-		android:background="#1A1A2E"
-		android:elevation="24dp"
-		android:clickable="true"
-		android:focusable="true">
-		<TextView
-			android:id="@+id/leftPillLabel"
-			android:layout_width="wrap_content"
-			android:layout_height="wrap_content"
-			android:text="LED"
-			android:textColor="#E0E0FF"
-			android:textSize="12sp"
-			android:textStyle="bold"
-			android:rotation="-90" />
-	</LinearLayout>
-
-	<LinearLayout
 		android:id="@+id/leftDrawer"
 		android:layout_width="240dp"
 		android:layout_height="match_parent"
@@ -133,7 +162,7 @@
 			<TextView android:id="@+id/btnModeLights" android:layout_width="48dp" android:layout_height="40dp" android:gravity="center" android:text="MODE" android:textColor="#E0E0FF" android:textSize="11sp" android:textStyle="bold" android:contentDescription="Lights edit mode" android:background="?attr/selectableItemBackgroundBorderless" android:clickable="true" android:focusable="true" />
 			<TextView android:id="@+id/btnCloseLeft" android:layout_width="40dp" android:layout_height="40dp" android:gravity="center" android:text="X" android:textColor="#CCCCDD" android:textSize="16sp" android:textStyle="bold" android:background="?attr/selectableItemBackgroundBorderless" android:clickable="true" android:focusable="true" />
 		</LinearLayout>
-		<TextView android:id="@+id/lightsModeHint" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="MODE enters lights edit. Top-row 3 also enters lights." android:textColor="#8888AA" android:textSize="11sp" android:paddingBottom="6dp" />
+		<TextView android:id="@+id/lightsModeHint" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Top LED opens this. MODE enters lights edit." android:textColor="#8888AA" android:textSize="11sp" android:paddingBottom="6dp" />
 		<FrameLayout android:id="@+id/lightshowPlaceholder" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:background="#0A0A12" />
 		<ScrollView android:id="@+id/ledListScroll" android:layout_width="match_parent" android:layout_height="80dp" android:background="#0A0A12">
 			<TextView android:id="@+id/ledFolderSummary" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="8dp" android:text="(no LED patterns yet)" android:textColor="#A0A0CC" android:textSize="12sp" android:fontFamily="monospace" />
@@ -141,26 +170,18 @@
 		<EditText android:id="@+id/ledEditor" android:layout_width="match_parent" android:layout_height="72dp" android:layout_marginTop="4dp" android:background="#0A0A12" android:gravity="top|start" android:hint="LED list" android:textColor="#CCE0FF" android:textColorHint="#445566" android:padding="8dp" android:textSize="12sp" android:fontFamily="monospace" android:inputType="textMultiLine" />
 	</LinearLayout>
 
-	<LinearLayout android:id="@+id/rightPillHandle" android:layout_width="48dp" android:layout_height="140dp" android:layout_gravity="end|center_vertical" android:layout_marginEnd="4dp" android:orientation="vertical" android:gravity="center" android:background="#1A1A2E" android:elevation="24dp" android:clickable="true" android:focusable="true">
-		<TextView android:id="@+id/rightPillLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="SOUND" android:textColor="#E0FFE0" android:textSize="12sp" android:textStyle="bold" android:rotation="90" />
-	</LinearLayout>
-
 	<LinearLayout android:id="@+id/rightDrawer" android:layout_width="240dp" android:layout_height="match_parent" android:layout_gravity="end" android:orientation="vertical" android:background="#12121C" android:elevation="16dp" android:visibility="gone" android:padding="12dp" android:clickable="true" android:focusable="true">
 		<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
 			<TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="KeySound" android:textColor="#FFFFFF" android:textSize="18sp" android:textStyle="bold" />
-			<TextView android:id="@+id/btnModeMap" android:layout_width="48dp" android:layout_height="40dp" android:gravity="center" android:text="MODE" android:textColor="#E0FFE0" android:textSize="11sp" android:textStyle="bold" android:contentDescription="Map / edit mode" android:background="?attr/selectableItemBackgroundBorderless" android:clickable="true" android:focusable="true" />
+			<TextView android:id="@+id/btnModeMap" android:layout_width="48dp" android:layout_height="40dp" android:gravity="center" android:text="MODE" android:textColor="#E0FFE0" android:textSize="11sp" android:textStyle="bold" android:background="?attr/selectableItemBackgroundBorderless" android:clickable="true" android:focusable="true" />
 			<TextView android:id="@+id/btnCloseRight" android:layout_width="40dp" android:layout_height="40dp" android:gravity="center" android:text="X" android:textColor="#CCCCDD" android:textSize="16sp" android:textStyle="bold" android:background="?attr/selectableItemBackgroundBorderless" android:clickable="true" android:focusable="true" />
 		</LinearLayout>
-		<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="MODE enters map (EDIT). Top-row 2 also maps." android:textColor="#8888AA" android:textSize="11sp" android:paddingBottom="6dp" />
+		<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Top SOUND opens this. MODE enters map (EDIT)." android:textColor="#8888AA" android:textSize="11sp" android:paddingBottom="6dp" />
 		<ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:background="#0A0A12">
 			<TextView android:id="@+id/soundFolderSummary" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="8dp" android:text="(no mappings yet)" android:textColor="#A0CCA0" android:textSize="12sp" android:fontFamily="monospace" />
 		</ScrollView>
 		<EditText android:id="@+id/soundEditor" android:layout_width="match_parent" android:layout_height="100dp" android:layout_marginTop="6dp" android:background="#0A0A12" android:gravity="top|start" android:hint="Sound mapping" android:textColor="#CCFFCC" android:textColorHint="#445566" android:padding="8dp" android:textSize="12sp" android:fontFamily="monospace" android:inputType="textMultiLine" />
 		<Button android:id="@+id/btnExportUnipack" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Export Unipack" />
-	</LinearLayout>
-
-	<LinearLayout android:id="@+id/bottomPillHandle" android:layout_width="160dp" android:layout_height="44dp" android:layout_gravity="bottom|center_horizontal" android:layout_marginBottom="8dp" android:orientation="horizontal" android:gravity="center" android:background="#1A1A2E" android:elevation="24dp" android:clickable="true" android:focusable="true">
-		<TextView android:id="@+id/bottomPillLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="WAVEFORM" android:textColor="#FFE0E0" android:textSize="12sp" android:textStyle="bold" android:letterSpacing="0.08" />
 	</LinearLayout>
 
 	<LinearLayout
