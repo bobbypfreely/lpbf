@@ -1,6 +1,8 @@
 package com.bobbypfreely.lpbf
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
@@ -22,6 +24,7 @@ import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
  * Shell with no side/bottom pills. Top bar first-press opens drawers:
  * PLAY = clean grid, SOUND = right map drawer, LED = left lights drawer,
  * WAVE = bottom waveform, HYBRID = hybrid mode.
+ * AP plays the AutoPlay sequence (or mapped cuts in order).
  */
 class MainActivity : AppCompatActivity() {
 
@@ -45,6 +48,8 @@ class MainActivity : AppCompatActivity() {
 	private val ledLines = mutableListOf<String>()
 	private lateinit var harness: com.bobbypfreely.lpbf.harness.LpbfHarness
 	private var lightsPlaying = false
+	private val autoPlayHandler = Handler(Looper.getMainLooper())
+	private var autoPlayRunning = false
 
 	fun mainLaunchpadGrid(): VirtualLaunchpadGridView = launchpadGrid
 
@@ -95,6 +100,7 @@ class MainActivity : AppCompatActivity() {
 		findViewById<View?>(R.id.btnExportUnipack)?.setOnClickListener { exportUnipack() }
 
 		findViewById<View?>(R.id.btnTopPlay)?.setOnClickListener {
+			stopAutoPlaySequence()
 			viewModel.enterUiMode(ProjectViewModel.UiMode.PLAY)
 			setLeftOpen(false); setRightOpen(false); setBottomOpen(false)
 		}
@@ -121,7 +127,13 @@ class MainActivity : AppCompatActivity() {
 			setLeftOpen(true)
 		}
 		findViewById<View?>(R.id.btnAutoPlayToggle)?.setOnClickListener {
-			viewModel.toggleAutoPlayEnabled(); refreshSideLists(); updateModeChrome()
+			if (autoPlayRunning) {
+				stopAutoPlaySequence()
+			} else {
+				viewModel.setAutoPlayEnabled(true)
+				startAutoPlaySequence()
+			}
+			refreshSideLists(); updateModeChrome()
 		}
 		findViewById<View?>(R.id.btnGuide)?.setOnClickListener {
 			viewModel.toggleGuideMode(); refreshSideLists(); updateModeChrome()
@@ -154,6 +166,7 @@ class MainActivity : AppCompatActivity() {
 	}
 
 	override fun onDestroy() {
+		stopAutoPlaySequence()
 		if (::harness.isInitialized) harness.release()
 		super.onDestroy()
 	}
@@ -162,8 +175,16 @@ class MainActivity : AppCompatActivity() {
 		val ap = viewModel.autoPlayEnabled.value == true
 		val guide = viewModel.guideMode.value == true
 		findViewById<TextView?>(R.id.btnAutoPlayToggle)?.apply {
-			text = if (ap) "AP ON" else "AP OFF"
-			setTextColor(if (ap) 0xFF81C784.toInt() else 0xFF8888AA.toInt())
+			text = when {
+				autoPlayRunning -> "STOP"
+				ap -> "AP ON"
+				else -> "AP OFF"
+			}
+			setTextColor(when {
+				autoPlayRunning -> 0xFFFF8A80.toInt()
+				ap -> 0xFF81C784.toInt()
+				else -> 0xFF8888AA.toInt()
+			})
 		}
 		findViewById<TextView?>(R.id.btnGuide)?.apply {
 			setTextColor(if (guide) 0xFFFFB74D.toInt() else 0xFF8888AA.toInt())
@@ -256,31 +277,30 @@ class MainActivity : AppCompatActivity() {
 		val mode = viewModel.uiMode.value
 		if (mode == ProjectViewModel.UiMode.LIGHTS) return
 		if (lightsPlaying) return
-		if (mode == ProjectViewModel.UiMode.PLAY) {
-			launchpadGrid.clearAllPads(); launchpadGrid.clearAllHighlights()
-			applyGuideHighlight(); return
-		}
 		launchpadGrid.clearAllPads(); launchpadGrid.clearAllHighlights()
+		if (autoPlayRunning) return
 		val litColor = 0xFF00ADB5.toInt()
 		val autoPlay = viewModel.autoPlay.value.orEmpty()
 		val showAutoPlayLabels = viewModel.autoPlayEnabled.value == true
 		val chainPresses = autoPlay.filter { it.button.chain == activeChain }
-		if (showAutoPlayLabels && chainPresses.isNotEmpty()) {
-			val padNums = LinkedHashMap<Pair<Int, Int>, MutableList<Int>>()
-			chainPresses.forEachIndexed { i, press ->
-				padNums.getOrPut(press.button.x to press.button.y) { mutableListOf() }.add(i + 1)
+		if (mode != ProjectViewModel.UiMode.PLAY || showAutoPlayLabels) {
+			if (showAutoPlayLabels && chainPresses.isNotEmpty()) {
+				val padNums = LinkedHashMap<Pair<Int, Int>, MutableList<Int>>()
+				chainPresses.forEachIndexed { i, press ->
+					padNums.getOrPut(press.button.x to press.button.y) { mutableListOf() }.add(i + 1)
+				}
+				padNums.forEach { (pad, nums) -> launchpadGrid.setPadLit(pad.first, pad.second, litColor, nums.joinToString(" ")) }
+			} else if (mode != ProjectViewModel.UiMode.PLAY) {
+				val padNums = LinkedHashMap<Pair<Int, Int>, MutableList<Int>>()
+				var n = 0
+				session?.segments()?.forEach { seg ->
+					val b = seg.button ?: return@forEach
+					if (b.chain != activeChain) return@forEach
+					n += 1
+					padNums.getOrPut(b.x to b.y) { mutableListOf() }.add(n)
+				}
+				padNums.forEach { (pad, nums) -> launchpadGrid.setPadLit(pad.first, pad.second, litColor, nums.joinToString(" ")) }
 			}
-			padNums.forEach { (pad, nums) -> launchpadGrid.setPadLit(pad.first, pad.second, litColor, nums.joinToString(" ")) }
-		} else {
-			val padNums = LinkedHashMap<Pair<Int, Int>, MutableList<Int>>()
-			var n = 0
-			session?.segments()?.forEach { seg ->
-				val b = seg.button ?: return@forEach
-				if (b.chain != activeChain) return@forEach
-				n += 1
-				padNums.getOrPut(b.x to b.y) { mutableListOf() }.add(n)
-			}
-			padNums.forEach { (pad, nums) -> launchpadGrid.setPadLit(pad.first, pad.second, litColor, nums.joinToString(" ")) }
 		}
 		applyGuideHighlight()
 	}
@@ -307,6 +327,77 @@ class MainActivity : AppCompatActivity() {
 						AlertDialog.Builder(this).setMessage("Failed: ${result.message}").setPositiveButton("OK", null).show()
 				}
 			}.setNegativeButton("Cancel", null).show()
+	}
+
+	/** Play AutoPlay sequence (timed presses) or mapped cuts in order. AP button starts/stops. */
+	private fun startAutoPlaySequence() {
+		stopAutoPlaySequence()
+		val session = viewModel.markingSession.value
+		val presses = viewModel.autoPlay.value.orEmpty()
+		if (presses.isNotEmpty()) {
+			autoPlayRunning = true
+			updateModeChrome()
+			val t0 = presses.first().timestampMs
+			presses.forEachIndexed { idx, press ->
+				val delay = (press.timestampMs - t0).toLong().coerceAtLeast(0L)
+				autoPlayHandler.postDelayed({
+					if (!autoPlayRunning) return@postDelayed
+					fireAutoPlayPress(press)
+					if (idx == presses.lastIndex) {
+						autoPlayHandler.postDelayed({ stopAutoPlaySequence() }, 400L)
+					}
+				}, delay)
+			}
+			android.util.Log.i("MainActivity", "AutoPlay sequence: ${presses.size} presses")
+			return
+		}
+		if (session == null || session.segmentCount == 0) {
+			android.util.Log.i("MainActivity", "AutoPlay: nothing mapped yet")
+			return
+		}
+		val mapped = session.segments().mapIndexedNotNull { i, seg ->
+			val b = seg.button ?: return@mapIndexedNotNull null
+			Triple(i, seg, b)
+		}
+		if (mapped.isEmpty()) {
+			android.util.Log.i("MainActivity", "AutoPlay: no mapped cuts")
+			return
+		}
+		autoPlayRunning = true
+		updateModeChrome()
+		var acc = 0L
+		mapped.forEachIndexed { idx, (_, seg, b) ->
+			val delay = acc
+			val hold = seg.durationMs.toLong().coerceAtLeast(200L)
+			autoPlayHandler.postDelayed({
+				if (!autoPlayRunning) return@postDelayed
+				launchpadGrid.setPadLit(b.x, b.y, 0xFF00ADB5.toInt(), "${idx + 1}")
+				playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
+				if (idx == mapped.lastIndex) {
+					autoPlayHandler.postDelayed({ stopAutoPlaySequence() }, hold)
+				}
+			}, delay)
+			acc += hold
+		}
+		android.util.Log.i("MainActivity", "AutoPlay fallback: ${mapped.size} mapped cuts")
+	}
+
+	private fun fireAutoPlayPress(press: com.bobbypfreely.lpbf.unipack.AutoPlayPress) {
+		val session = viewModel.markingSession.value ?: return
+		val b = press.button
+		val matches = session.segments().withIndex().filter { it.value.button == b }
+		if (matches.isEmpty()) return
+		val pick = matches[press.occurrenceIndex % matches.size]
+		val seg = pick.value
+		launchpadGrid.setPadLit(b.x, b.y, 0xFF00ADB5.toInt(), "${press.occurrenceIndex + 1}")
+		playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
+	}
+
+	private fun stopAutoPlaySequence() {
+		autoPlayRunning = false
+		autoPlayHandler.removeCallbacksAndMessages(null)
+		updateModeChrome()
+		refreshSideLists()
 	}
 
 	private fun setLeftOpen(open: Boolean) {
