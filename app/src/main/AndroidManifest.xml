@@ -13,9 +13,13 @@
 		android:supportsRtl="true"
 		android:theme="@style/Theme.LPBF">
 
+		<!-- configChanges: orientation/headphones-related size changes must NOT recreate
+		     the Activity — that was releasing ExoPlayers and reloading a cacheDir path
+		     that Android had already wiped (ERROR_CODE_IO_FILE_NOT_FOUND). -->
 		<activity
 			android:name=".MainActivity"
-			android:exported="true">
+			android:exported="true"
+			android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation">
 			<intent-filter>
 				<action android:name="android.intent.action.MAIN" />
 				<category android:name="android.intent.category.LAUNCHER" />
@@ -28,7 +32,7 @@
 			android:name=".activity.UsbMidiHandlerActivity"
 			android:exported="true"
 			android:launchMode="singleInstance"
-			android:theme="@android:style/Theme.NoDisplay"
+			android:theme="@android:style.Theme.NoDisplay"
 			android:noHistory="true"
 			tools:ignore="DiscouragedApi">
 			<intent-filter>

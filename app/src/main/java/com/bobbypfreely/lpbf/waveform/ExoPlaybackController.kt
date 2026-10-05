@@ -7,35 +7,24 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import java.io.File
 
 /**
- * Wraps ExoPlayer for the Mark and Cut screen's play/pause/seek needs, replacing the
- * hand-rolled MediaCodec/AudioTrack code that was crashing on real hardware (the
- * "Cannot create AudioTrack" issue). ExoPlayer handles device/OEM quirks we were
- * hitting ourselves, and plays directly from the local cached file path.
+ * Wraps ExoPlayer for Mark/Cut + pad preview. Created/used on main thread only.
  *
- * Must be created and used on the main thread (ExoPlayer requirement).
+ * handleAudioFocus=false so multiple players (waveform + PadVoicePool) never kill each other.
+ * After STATE_ENDED / source errors we re-prepare so Play works again without a full reload.
  */
 class ExoPlaybackController(context: Context) {
 
-	private val player = ExoPlayer.Builder(context).build()
+	private val player = ExoPlayer.Builder(context.applicationContext).build()
+	private var loadedPath: String? = null
 
 	var onPositionUpdate: ((Int) -> Unit)? = null
 	var onPlaybackStateChanged: ((Boolean) -> Unit)? = null
-
-	/** Raw ExoPlayer state/duration/position, piped to the on-screen debug log so a
-	 * silent stall (no crash, no error) can actually be diagnosed instead of guessed at. */
 	var onDebugEvent: ((String) -> Unit)? = null
 
 	init {
-		// This is a preview/editing tool, not a background media app, and more than one
-		// ExoPlayer instance can be alive at once (Mark & Cut's own player plus Place's
-		// separate preview player). Without this, ExoPlayer's default audio-focus
-		// handling means one instance starting playback silently force-pauses the
-		// other via an audio focus loss callback -- which looks exactly like "Play just
-		// stops working" with no error anywhere. Not requesting focus at all makes every
-		// Play/preview action do exactly what it says, regardless of what else in the
-		// app might be playing.
 		player.setAudioAttributes(
 			AudioAttributes.Builder()
 				.setUsage(C.USAGE_MEDIA)
@@ -64,30 +53,72 @@ class ExoPlaybackController(context: Context) {
 			}
 
 			override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-				onDebugEvent?.invoke("ExoPlayer ERROR: ${error.errorCodeName}: ${error.message}")
+				onDebugEvent?.invoke(
+					"ExoPlayer ERROR: ${error.errorCodeName}: ${error.message} path=$loadedPath"
+				)
+				try {
+					player.stop()
+					player.clearMediaItems()
+				} catch (_: Exception) {
+				}
 			}
 		})
 	}
 
 	fun load(filePath: String) {
-		val file = java.io.File(filePath)
+		val file = File(filePath)
+		if (!file.exists() || !file.isFile || file.length() <= 0L) {
+			onDebugEvent?.invoke(
+				"ExoPlaybackController.load FAILED: missing or empty file: $filePath " +
+					"(exists=${file.exists()} length=${if (file.exists()) file.length() else -1})"
+			)
+			loadedPath = null
+			try {
+				player.stop()
+				player.clearMediaItems()
+			} catch (_: Exception) {
+			}
+			return
+		}
 		onDebugEvent?.invoke("ExoPlaybackController.load: $filePath (${file.length()} bytes on disk)")
-		player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+		loadedPath = file.absolutePath
+		val uri = Uri.parse("file://${file.absolutePath}")
+		player.setMediaItem(MediaItem.fromUri(uri))
 		player.prepare()
 	}
 
+	private fun ensureMediaLoaded(): Boolean {
+		if (player.mediaItemCount > 0 && player.playbackState != Player.STATE_IDLE) {
+			return true
+		}
+		val path = loadedPath ?: return false
+		val file = File(path)
+		if (!file.exists() || file.length() <= 0L) {
+			onDebugEvent?.invoke("ensureMediaLoaded: file gone: $path")
+			return false
+		}
+		return try {
+			player.setMediaItem(MediaItem.fromUri(Uri.parse("file://${file.absolutePath}")))
+			player.prepare()
+			true
+		} catch (e: Exception) {
+			onDebugEvent?.invoke("ensureMediaLoaded failed: ${e.message}")
+			false
+		}
+	}
+
 	fun playFrom(ms: Int) {
-		// After STATE_ENDED, ExoPlayer ignores play() until a seek moves off the end.
-		// PadVoicePool + waveform both hit this after a clip/track finishes — audio "dies".
+		if (!ensureMediaLoaded()) {
+			onDebugEvent?.invoke("playFrom aborted — no media (path=$loadedPath)")
+			return
+		}
 		val duration = player.duration
 		var target = ms.toLong().coerceAtLeast(0L)
 		if (duration > 0L && target >= duration) {
-			// At/past end: restart from beginning (Play button after song ends).
 			target = 0L
 		}
 		if (player.playbackState == Player.STATE_ENDED || player.playbackState == Player.STATE_IDLE) {
 			player.seekTo(target)
-			// Ensure playWhenReady after ended/idle
 			player.playWhenReady = true
 			if (player.playbackState == Player.STATE_IDLE) {
 				player.prepare()
@@ -102,7 +133,6 @@ class ExoPlaybackController(context: Context) {
 		player.pause()
 	}
 
-	/** Stops playback and returns the exact position (ms) it stopped at. */
 	fun stop(): Int {
 		val pos = currentPositionMs()
 		player.pause()
@@ -110,6 +140,7 @@ class ExoPlaybackController(context: Context) {
 	}
 
 	fun seekTo(ms: Int) {
+		if (!ensureMediaLoaded()) return
 		val duration = player.duration
 		var target = ms.toLong().coerceAtLeast(0L)
 		if (duration > 0L) target = target.coerceAtMost(duration)
@@ -119,11 +150,15 @@ class ExoPlaybackController(context: Context) {
 		}
 	}
 
-	fun currentPositionMs(): Int = player.currentPosition.toInt()
+	fun currentPositionMs(): Int = player.currentPosition.toInt().coerceAtLeast(0)
 
 	val isPlaying: Boolean get() = player.isPlaying
 
 	fun release() {
-		player.release()
+		loadedPath = null
+		try {
+			player.release()
+		} catch (_: Exception) {
+		}
 	}
 }
