@@ -77,7 +77,24 @@ class ExoPlaybackController(context: Context) {
 	}
 
 	fun playFrom(ms: Int) {
-		player.seekTo(ms.toLong())
+		// After STATE_ENDED, ExoPlayer ignores play() until a seek moves off the end.
+		// PadVoicePool + waveform both hit this after a clip/track finishes — audio "dies".
+		val duration = player.duration
+		var target = ms.toLong().coerceAtLeast(0L)
+		if (duration > 0L && target >= duration) {
+			// At/past end: restart from beginning (Play button after song ends).
+			target = 0L
+		}
+		if (player.playbackState == Player.STATE_ENDED || player.playbackState == Player.STATE_IDLE) {
+			player.seekTo(target)
+			// Ensure playWhenReady after ended/idle
+			player.playWhenReady = true
+			if (player.playbackState == Player.STATE_IDLE) {
+				player.prepare()
+			}
+		} else {
+			player.seekTo(target)
+		}
 		player.play()
 	}
 
@@ -93,7 +110,13 @@ class ExoPlaybackController(context: Context) {
 	}
 
 	fun seekTo(ms: Int) {
-		player.seekTo(ms.toLong())
+		val duration = player.duration
+		var target = ms.toLong().coerceAtLeast(0L)
+		if (duration > 0L) target = target.coerceAtMost(duration)
+		player.seekTo(target)
+		if (player.playbackState == Player.STATE_IDLE) {
+			player.prepare()
+		}
 	}
 
 	fun currentPositionMs(): Int = player.currentPosition.toInt()
