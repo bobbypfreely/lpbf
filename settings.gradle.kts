@@ -14,5 +14,5 @@ dependencyResolutionManagement {
 	}
 }
 
-rootProject.name = "LPBF"
+rootProject.name = "L.P.B.F."
 include(":app")
