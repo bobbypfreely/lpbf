@@ -181,8 +181,8 @@ class MainActivity : AppCompatActivity() {
 	}
 
 	private fun showDonateDialog() {
-		val msg = "LPBF is free forever — no ads, no paywall.\n\n" +
-			"Optional tip keeps the lights on.\n\n" +
+		val msg = "LPBF is free now forever — no ads, no paywalls. This is something I have always wanted, THIS IS NOT IN COMPETITION OR MEANT TO REPLACE THE ORIGINAL, THIS IS MEANT TO COMPLIMENT IT WITH NEW PROJECTS FOR EVERYONE, So go download Unipad.\n\n" +
+			"Optional tip let's me know I'm right on the correct path.\n\n" +
 			"© Bobby P. Freely · LPBF\nbobbyp.freely@gmail.com"
 		AlertDialog.Builder(this)
 			.setTitle("Support LPBF")
