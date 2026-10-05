@@ -18,8 +18,7 @@
 			<Button android:id="@+id/importPreCutButton" android:layout_width="wrap_content" android:layout_height="36dp" android:layout_marginStart="4dp" android:text="Pre-Cut" android:textSize="12sp" android:minWidth="0dp" android:paddingStart="12dp" android:paddingEnd="12dp" />
 			<Button android:id="@+id/importUnipackButton" android:layout_width="wrap_content" android:layout_height="36dp" android:layout_marginStart="4dp" android:text="Unipack" android:textSize="12sp" android:minWidth="0dp" android:paddingStart="12dp" android:paddingEnd="12dp" />
 			<Button android:id="@+id/importUnipackFolderButton" android:layout_width="wrap_content" android:layout_height="36dp" android:layout_marginStart="4dp" android:text="Folder" android:textSize="12sp" android:minWidth="0dp" android:paddingStart="12dp" android:paddingEnd="12dp" />
-			<Button android:id="@+id/saveProjectButton" android:layout_width="wrap_content" android:layout_height="36dp" android:layout_marginStart="4dp" android:text="Save" android:textSize="12sp" android:minWidth="0dp" android:paddingStart="12dp" android:paddingEnd="12dp" />
-			<Button android:id="@+id/loadProjectButton" android:layout_width="wrap_content" android:layout_height="36dp" android:layout_marginStart="4dp" android:text="Load" android:textSize="12sp" android:minWidth="0dp" android:paddingStart="12dp" android:paddingEnd="12dp" />
+			<Button android:id="@+id/loadProjectButton" android:layout_width="wrap_content" android:layout_height="36dp" android:layout_marginStart="4dp" android:text="Recover" android:textSize="12sp" android:minWidth="0dp" android:paddingStart="12dp" android:paddingEnd="12dp" android:contentDescription="Load autosave after crash" />
 		</LinearLayout>
 	</HorizontalScrollView>
 
