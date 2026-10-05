@@ -1,5 +1,7 @@
 package com.bobbypfreely.lpbf
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -23,6 +25,7 @@ import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 /**
  * Shell with no side/bottom pills. Top bar first-press opens drawers.
  * AP plays autoPlay file sequence, or all cuts in mark order when none.
+ * Silent autosave on mode change / onPause. First-open tips per mode.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -134,6 +137,7 @@ class MainActivity : AppCompatActivity() {
 		findViewById<View?>(R.id.btnGuide)?.setOnClickListener {
 			viewModel.toggleGuideMode(); refreshSideLists(); updateModeChrome()
 		}
+		findViewById<View?>(R.id.btnDonate)?.setOnClickListener { showDonateDialog() }
 
 		viewModel.autoPlayEnabled.observe(this) { refreshSideLists(); updateModeChrome() }
 		viewModel.guideMode.observe(this) { refreshSideLists(); updateModeChrome() }
@@ -157,14 +161,102 @@ class MainActivity : AppCompatActivity() {
 				viewModel.clearPreviewRequest()
 			}
 		}
-		viewModel.uiMode.observe(this) { mode -> applyUiMode(mode) }
+		viewModel.uiMode.observe(this) { mode ->
+			applyUiMode(mode)
+			showTipForMode(mode)
+			viewModel.autosave(applicationContext)
+		}
 		updateCenterInsets(); updateModeChrome()
+	}
+
+	override fun onPause() {
+		viewModel.autosave(applicationContext)
+		super.onPause()
 	}
 
 	override fun onDestroy() {
 		stopAutoPlaySequence()
 		if (::harness.isInitialized) harness.release()
 		super.onDestroy()
+	}
+
+	private fun showDonateDialog() {
+		val msg = "LPBF is free forever — no ads, no paywall.\n\n" +
+			"Optional tip keeps the lights on.\n\n" +
+			"© Bobby P. Freely · LPBF\nbobbyp.freely@gmail.com"
+		AlertDialog.Builder(this)
+			.setTitle("Support LPBF")
+			.setMessage(msg)
+			.setPositiveButton("Cash App") { _, _ ->
+				try {
+					startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cash.app/$" + "Mysterp")))
+				} catch (e: Exception) {
+					android.widget.Toast.makeText(this, "Cash App: $" + "Mysterp", android.widget.Toast.LENGTH_LONG).show()
+				}
+			}
+			.setNeutralButton("PayPal") { _, _ ->
+				try {
+					val uri = Uri.parse(
+						"https://www.paypal.com/cgi-bin/webscr?cmd=_donations" +
+							"&business=bobbyp.freely%40gmail.com&currency_code=USD&item_name=LPBF"
+					)
+					startActivity(Intent(Intent.ACTION_VIEW, uri))
+				} catch (e: Exception) {
+					android.widget.Toast.makeText(this, "PayPal: bobbyp.freely@gmail.com", android.widget.Toast.LENGTH_LONG).show()
+				}
+			}
+			.setNegativeButton("Close", null)
+			.show()
+	}
+
+	private fun showTipForMode(mode: ProjectViewModel.UiMode?) {
+		val m = mode ?: return
+		val prefs = getSharedPreferences("lpbf_tips", MODE_PRIVATE)
+		val key = "tip_" + m.name
+		if (prefs.getBoolean(key, false)) return
+		val (title, body) = when (m) {
+			ProjectViewModel.UiMode.PLAY -> "PLAY" to
+				"Clean grid. Tap mapped pads to trigger cuts + lights.\n\n" +
+				"AP plays the sequence. GUIDE highlights the next pad to hit."
+			ProjectViewModel.UiMode.EDIT -> "MAP / SOUND" to
+				"Tap pads to assign the next unmapped cut.\n\n" +
+				"Open the sound list to jump a cut into the waveform editor.\n" +
+				"Export Unipack when you're done — autosave runs in the background."
+			ProjectViewModel.UiMode.HYBRID -> "HYBRID" to
+				"Assign and preview in one tap.\n\n" +
+				"Great for building the map while hearing each cut."
+			ProjectViewModel.UiMode.LIGHTS -> "LIGHTS / LED" to
+				"Select a mapped pad, then paint a light pattern.\n\n" +
+				"Chain buttons pick hue. Patterns export into the Unipack keyLED folder."
+		}
+		AlertDialog.Builder(this)
+			.setTitle(title)
+			.setMessage(body)
+			.setPositiveButton("Got it") { _, _ ->
+				prefs.edit().putBoolean(key, true).apply()
+			}
+			.setCancelable(true)
+			.setOnCancelListener { prefs.edit().putBoolean(key, true).apply() }
+			.show()
+	}
+
+	private fun showWaveformTipIfNeeded() {
+		val prefs = getSharedPreferences("lpbf_tips", MODE_PRIVATE)
+		if (prefs.getBoolean("tip_WAVE", false)) return
+		AlertDialog.Builder(this)
+			.setTitle("Waveform")
+			.setMessage(
+				"1. Import a track\n" +
+				"2. Play, then Mark Cut Here as you go\n" +
+				"3. Map cuts onto pads (SOUND / HYBRID)\n" +
+				"4. Export Unipack for UniPad\n\n" +
+				"Autosave runs when you change tabs — Recover after a crash."
+			)
+			.setPositiveButton("Got it") { _, _ ->
+				prefs.edit().putBoolean("tip_WAVE", true).apply()
+			}
+			.setOnCancelListener { prefs.edit().putBoolean("tip_WAVE", true).apply() }
+			.show()
 	}
 
 	private fun updateModeChrome() {
@@ -325,7 +417,6 @@ class MainActivity : AppCompatActivity() {
 			}.setNegativeButton("Cancel", null).show()
 	}
 
-	/** Play AutoPlay sequence, or all cuts in mark order when no autoPlay file. */
 	private fun startAutoPlaySequence() {
 		stopAutoPlaySequence()
 		val session = viewModel.markingSession.value
@@ -344,13 +435,10 @@ class MainActivity : AppCompatActivity() {
 					}
 				}, delay)
 			}
-			android.util.Log.i("MainActivity", "AutoPlay sequence: ${presses.size} presses")
 			return
 		}
-		// No autoPlay file: play every cut in mark order (mapped or not)
 		if (session == null || session.segmentCount == 0) {
 			modeLabel.text = "AP: mark cuts first"
-			android.util.Log.i("MainActivity", "AutoPlay: no cuts yet")
 			return
 		}
 		val cuts = session.segments()
@@ -375,7 +463,6 @@ class MainActivity : AppCompatActivity() {
 			}, delay)
 			acc += hold
 		}
-		android.util.Log.i("MainActivity", "AutoPlay fallback: ${cuts.size} cuts (no autoPlay file)")
 	}
 
 	private fun fireAutoPlayPress(press: com.bobbypfreely.lpbf.unipack.AutoPlayPress) {
@@ -422,7 +509,12 @@ class MainActivity : AppCompatActivity() {
 		bottomOpen = open
 		bottomDrawer.visibility = if (open) View.VISIBLE else View.GONE
 		viewModel.isMarkAndCutTabActive = open
-		if (open) ensureWaveformFragment()
+		if (open) {
+			ensureWaveformFragment()
+			showWaveformTipIfNeeded()
+		} else {
+			viewModel.autosave(applicationContext)
+		}
 		updateCenterInsets()
 	}
 
