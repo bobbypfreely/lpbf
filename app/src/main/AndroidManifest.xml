@@ -13,9 +13,9 @@
 		android:supportsRtl="true"
 		android:theme="@style/Theme.LPBF">
 
-		<!-- configChanges: orientation/headphones-related size changes must NOT recreate
-		     the Activity — that was releasing ExoPlayers and reloading a cacheDir path
-		     that Android had already wiped (ERROR_CODE_IO_FILE_NOT_FOUND). -->
+		<!-- configChanges: orientation / audio-route size changes must NOT recreate
+		     the Activity — that released ExoPlayers and reloaded a cacheDir path
+		     Android had already wiped (ERROR_CODE_IO_FILE_NOT_FOUND). -->
 		<activity
 			android:name=".MainActivity"
 			android:exported="true"
@@ -26,13 +26,11 @@
 			</intent-filter>
 		</activity>
 
-		<!-- No-UI activity that catches a physical Launchpad being plugged in via USB
-		     and hands it to MidiConnection, ported from Unipad's identical pattern. -->
 		<activity
 			android:name=".activity.UsbMidiHandlerActivity"
 			android:exported="true"
 			android:launchMode="singleInstance"
-			android:theme="@android:style.Theme.NoDisplay"
+			android:theme="@android:style/Theme.NoDisplay"
 			android:noHistory="true"
 			tools:ignore="DiscouragedApi">
 			<intent-filter>
