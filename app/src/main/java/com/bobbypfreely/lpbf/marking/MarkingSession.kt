@@ -120,14 +120,18 @@ class MarkingSession(private val trackDurationMs: Int) {
 	fun recordMark(atMs: Int, button: ButtonRef?, loop: Int = 1, wormhole: Int = -1): RecordResult {
 		checkNotSpliced()
 		val prev = marks.last()
-		require(atMs > prev) { "New mark ($atMs) must be after the previous mark ($prev)" }
-		require(atMs <= trackDurationMs) { "New mark ($atMs) is past the end of the track ($trackDurationMs)" }
-
-		val gap = atMs - prev
+		// Soft-clamp: ExoPlayer often reports position past duration at STATE_ENDED.
+		// Never throw — callers (UI mark button) must not crash the app.
+		if (prev >= trackDurationMs) {
+			// Already marked to the end of the track; nothing left to cut.
+			return RecordResult.ExceedsCap(0, MAX_SEGMENT_MS)
+		}
+		val clamped = atMs.coerceIn(prev + 1, trackDurationMs)
+		val gap = clamped - prev
 		if (gap > MAX_SEGMENT_MS) {
 			return RecordResult.ExceedsCap(gap, MAX_SEGMENT_MS)
 		}
-		return commitMark(atMs, button, loop, wormhole)
+		return commitMark(clamped, button, loop, wormhole)
 	}
 
 	fun resolveCapAutoSplit(button: ButtonRef?, loop: Int = 1, wormhole: Int = -1): RecordResult.Committed {
