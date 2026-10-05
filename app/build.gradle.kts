@@ -11,8 +11,8 @@ android {
 		applicationId = "com.bobbypfreely.lpbf"
 		minSdk = 26
 		targetSdk = 34
-		versionCode = 1
-		versionName = "0.1.0"
+		versionCode = 65
+		versionName = "0.2.0-beta"
 	}
 
 	// Committed debug keystore (app/lpbf-debug.keystore) so every CI run signs debug
