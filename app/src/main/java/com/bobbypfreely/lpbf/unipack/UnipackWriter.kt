@@ -11,36 +11,23 @@ import java.util.zip.ZipOutputStream
  * 1-indexed chain/x/y on disk, same keyLed/ folder convention -- so anything written
  * here re-imports cleanly and plays on real Unipad/Launchpad hardware.
  *
- * Also writes `autoPlay` from mapped cut order + durations (AutoPlayWriter).
+ * autoPlay: if [autoPlayTextOverride] is set (imported performance score), write it
+ * verbatim. Otherwise generate sequential t/d from cut durations (marks-from-scratch).
  *
  * keySound line on disk (1-indexed):
  *   chain  x  y  soundFileName  [loop]  [wormhole]
- *
- * loop (Unipad semantics, written as-is):
- *   0 = play only while held
- *   1 = play once (default)
- *   N = play N times
- *
- * wormhole: on disk a positive integer is the 1-based chain to jump to.
- *   Internally we store 0-indexed chain or -1 for none; convert on write.
- *
- * Real packs leave the FIRST LINE of every plain-text file blank (info, keySound, and
- * each keyLED file) -- some parsers, including Unipad's own, don't recognize line 1, so
- * every text entry here is written with a leading blank line to match.
  */
 object UnipackWriter {
 
-	/** One fully-rendered cut, ready to drop into the zip as-is. [keyLedFileName] and
-	 * [keyLedText] are both null when this cut has no lightshow. */
 	data class SoundEntry(
 		val button: ButtonRef,
-		val soundFileName: String,   // e.g. "001.wav"
+		val soundFileName: String,
 		val wavBytes: ByteArray,
 		val keyLedFileName: String?,
 		val keyLedText: String?,
 		val loop: Int = 1,
-		val wormhole: Int = -1,      // 0-indexed chain, or -1 for none
-		val durationMs: Int = 0,     // used for autoPlay delays
+		val wormhole: Int = -1,
+		val durationMs: Int = 0,
 	)
 
 	fun write(
@@ -51,6 +38,12 @@ object UnipackWriter {
 		buttonY: Int,
 		chainCount: Int,
 		entries: List<SoundEntry>,
+		/**
+		 * When non-null (imported pack), write this performance autoPlay verbatim.
+		 * First rule: UniPad-compatible export — never flatten on/off/delay into sequential t/d.
+		 * When null (marks from scratch), generate sequential autoPlay from cut durations.
+		 */
+		autoPlayTextOverride: String? = null,
 	) {
 		ZipOutputStream(output).use { zip ->
 			zip.putNextEntry(ZipEntry("info"))
@@ -61,7 +54,10 @@ object UnipackWriter {
 			zip.write(buildKeySoundText(entries).toByteArray(Charsets.UTF_8))
 			zip.closeEntry()
 
-			val autoPlayText = AutoPlayWriter.buildFromEntries(entries)
+			val autoPlayText = when {
+				!autoPlayTextOverride.isNullOrBlank() -> autoPlayTextOverride
+				else -> AutoPlayWriter.buildFromEntries(entries)
+			}
 			if (autoPlayText.isNotBlank()) {
 				zip.putNextEntry(ZipEntry("autoPlay"))
 				zip.write(autoPlayText.toByteArray(Charsets.UTF_8))
@@ -97,12 +93,6 @@ object UnipackWriter {
 		return sb.toString()
 	}
 
-	/**
-	 * Writes keySound lines matching UnipackReader:
-	 *   chain x y soundFile  [loop]  [wormhole]
-	 * Always includes loop (even when 1) when wormhole is set, so the field positions stay stable.
-	 * Omits trailing fields when both are defaults (loop=1, wormhole=-1) to match common packs.
-	 */
 	private fun buildKeySoundText(entries: List<SoundEntry>): String {
 		val sb = StringBuilder("\n")
 		entries.forEach { e ->
@@ -118,7 +108,6 @@ object UnipackWriter {
 				sb.append(' ').append(e.loop)
 			}
 			if (hasWormhole) {
-				// Disk is 1-based chain number
 				sb.append(' ').append(e.wormhole + 1)
 			}
 			sb.append('\n')
