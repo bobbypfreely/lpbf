@@ -40,6 +40,8 @@ data class UnipackReadResult(
 	val soundsDir: File,
 	val keyLedDir: File?,
 	val autoPlay: List<AutoPlayPress>,
+	/** Exact autoPlay file text from the pack (on/off/delay performance). Preserve on export. */
+	val autoPlayRaw: String? = null,
 	val warnings: List<String>,
 )
 
@@ -135,14 +137,11 @@ object UnipackReader {
 				val split = s.trim().split("\\s+".toRegex())
 				if (split.size < 4) return@forEach
 				try {
-					// Disk is 1-indexed → ButtonRef is 0-indexed
 					val c = split[0].toInt() - 1
-					val x = split[1].toInt() - 1   // vertical (row)
-					val y = split[2].toInt() - 1   // horizontal (column)
+					val x = split[1].toInt() - 1
+					val y = split[2].toInt() - 1
 					val soundURL = split[3]
-					// Keep Unipad loop semantics exactly (do NOT subtract 1)
 					val loop = if (split.size >= 5) split[4].toInt() else 1
-					// Wormhole on disk is 1-based chain number; store 0-based, -1 = none
 					val wormhole = if (split.size >= 6) {
 						val rawWh = split[5].toInt()
 						if (rawWh <= 0) -1 else rawWh - 1
@@ -163,6 +162,12 @@ object UnipackReader {
 			}
 		}
 
+		val autoPlayRaw = try {
+			autoPlayFile?.takeIf { it.exists() && it.length() > 0L }?.readText()
+		} catch (e: Exception) {
+			warnings.add("autoPlay: couldn't read raw file (${e.message})")
+			null
+		}
 		val autoPlay = try {
 			autoPlayFile?.let { AutoPlayReader.read(it) } ?: emptyList()
 		} catch (e: Exception) {
@@ -176,6 +181,7 @@ object UnipackReader {
 			soundsDir = soundsDir,
 			keyLedDir = keyLedDir,
 			autoPlay = autoPlay,
+			autoPlayRaw = autoPlayRaw,
 			warnings = warnings,
 		)
 	}
