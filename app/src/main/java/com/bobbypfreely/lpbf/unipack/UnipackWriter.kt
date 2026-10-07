@@ -7,15 +7,11 @@ import java.util.zip.ZipOutputStream
 
 /**
  * Assembles a real Unipack zip from already-rendered pieces (WAV bytes, keyLED text).
- * Mirrors UnipackReader's format exactly -- same "info"/"keySound" key names, same
- * 1-indexed chain/x/y on disk, same keyLed/ folder convention -- so anything written
- * here re-imports cleanly and plays on real Unipad/Launchpad hardware.
+ * Mirrors UnipackReader so anything written here plays on real UniPad hardware.
  *
- * autoPlay: if [autoPlayTextOverride] is set (imported performance score), write it
- * verbatim. Otherwise generate sequential t/d from cut durations (marks-from-scratch).
- *
- * keySound line on disk (1-indexed):
- *   chain  x  y  soundFileName  [loop]  [wormhole]
+ * autoPlay:
+ *  - [autoPlayTextOverride] set → write imported performance score verbatim
+ *  - else → [AutoPlayWriter.buildFromEntries] timeline from startMs (chords + gaps)
  */
 object UnipackWriter {
 
@@ -28,6 +24,7 @@ object UnipackWriter {
 		val loop: Int = 1,
 		val wormhole: Int = -1,
 		val durationMs: Int = 0,
+		val startMs: Int = -1,
 	)
 
 	fun write(
@@ -38,11 +35,6 @@ object UnipackWriter {
 		buttonY: Int,
 		chainCount: Int,
 		entries: List<SoundEntry>,
-		/**
-		 * When non-null (imported pack), write this performance autoPlay verbatim.
-		 * First rule: UniPad-compatible export — never flatten on/off/delay into sequential t/d.
-		 * When null (marks from scratch), generate sequential autoPlay from cut durations.
-		 */
 		autoPlayTextOverride: String? = null,
 	) {
 		ZipOutputStream(output).use { zip ->
@@ -101,7 +93,6 @@ object UnipackWriter {
 				.append(b.x + 1).append(' ')
 				.append(b.y + 1).append(' ')
 				.append(e.soundFileName)
-
 			val hasWormhole = e.wormhole >= 0
 			val nonDefaultLoop = e.loop != 1
 			if (hasWormhole || nonDefaultLoop) {
