@@ -32,9 +32,30 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	private val _autoPlay = MutableLiveData<List<com.bobbypfreely.lpbf.unipack.AutoPlayPress>>(emptyList())
 	val autoPlay: LiveData<List<com.bobbypfreely.lpbf.unipack.AutoPlayPress>> = _autoPlay
 
-	fun setAutoPlay(presses: List<com.bobbypfreely.lpbf.unipack.AutoPlayPress>) {
+	/**
+	 * Exact autoPlay file text from an imported Unipack (on/off/delay performance score).
+	 * Export must write this verbatim when present — sequential rebuild breaks UniPad.
+	 */
+	var importedAutoPlayRaw: String? = null
+		private set
+
+	fun setAutoPlay(
+		presses: List<com.bobbypfreely.lpbf.unipack.AutoPlayPress>,
+		rawText: String? = null,
+	) {
 		_autoPlay.value = presses
-		logDebug("AutoPlay: ${presses.size} presses" + if (presses.isEmpty()) " (none — labels fall back to map order)" else "")
+		if (rawText != null) {
+			importedAutoPlayRaw = rawText.ifBlank { null }
+		}
+		val note = buildString {
+			if (presses.isEmpty()) append(" (none — labels fall back to map order)")
+			if (!importedAutoPlayRaw.isNullOrBlank()) append(" [raw preserved for export]")
+		}
+		logDebug("AutoPlay: ${presses.size} presses$note")
+	}
+
+	fun clearImportedAutoPlayRaw() {
+		importedAutoPlayRaw = null
 	}
 
 
@@ -136,6 +157,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		_decodedAudio.value = audio
 		_markingSession.value = MarkingSession(audio.totalDurationMs)
 		_autoPlay.value = emptyList()
+		importedAutoPlayRaw = null
 		notifySegmentsChanged()
 	}
 
@@ -443,6 +465,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		cachedFilePath = result.cachedFilePath
 		_decodedAudio.value = result.decodedAudio
 		_autoPlay.value = emptyList()
+		importedAutoPlayRaw = null
 		_markingSession.value = MarkingSession.restore(
 			result.decodedAudio.totalDurationMs,
 			result.marks,
@@ -623,6 +646,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		previewCycleIndex.clear()
 		lightshowCycleIndex.clear()
 		_autoPlay.value = emptyList()
+		importedAutoPlayRaw = null
 		enterUiMode(UiMode.PLAY)
 		notifySegmentsChanged()
 	}
@@ -671,6 +695,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 				loop = clip.loop,
 				wormhole = clip.wormhole,
 				durationMs = ex.preciseDurationMs,
+				startMs = clip.startMs,
 			)
 		}
 		if (entries.isEmpty()) return UnipackExportResult.NothingToExport
@@ -687,6 +712,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 					buttonY = 8,
 					chainCount = chainCount.coerceAtLeast(1),
 					entries = entries,
+					autoPlayTextOverride = importedAutoPlayRaw,
 				)
 			} ?: return UnipackExportResult.Failed("Could not create the file in Documents/lpbf")
 			logDebug("Created Unipack '$fileName' -> $displayPath (${entries.size} sounds, $lightshowCount lightshows)")
