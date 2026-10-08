@@ -682,7 +682,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		activity?.runOnUiThread {
 			viewModel.applyMultiClipImport(result)
 			// Drive pad labels + future playback from real performance order when present
-			viewModel.setAutoPlay(read.autoPlay)
+			viewModel.setAutoPlay(read.autoPlay, read.autoPlayRaw)
 			val apNote = if (read.autoPlay.isEmpty()) " (no autoPlay — labels use map order)" else " autoPlay=${read.autoPlay.size} presses"
 			val summary = StringBuilder("Imported Unipack '${read.info.title}' -- ${result.buttons.size} cut(s).$apNote")
 			val lightshowCount = result.patterns.count { it != null }
