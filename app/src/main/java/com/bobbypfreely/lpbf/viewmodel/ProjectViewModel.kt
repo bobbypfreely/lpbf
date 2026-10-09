@@ -32,6 +32,10 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	private val _autoPlay = MutableLiveData<List<com.bobbypfreely.lpbf.unipack.AutoPlayPress>>(emptyList())
 	val autoPlay: LiveData<List<com.bobbypfreely.lpbf.unipack.AutoPlayPress>> = _autoPlay
 
+	/** UniPad-style element list for AP playback (on/off/chain/delay). */
+	private val _autoPlayElements = MutableLiveData<List<com.bobbypfreely.lpbf.unipack.AutoPlayElement>>(emptyList())
+	val autoPlayElements: LiveData<List<com.bobbypfreely.lpbf.unipack.AutoPlayElement>> = _autoPlayElements
+
 	/**
 	 * Exact autoPlay file text from an imported Unipack (on/off/delay performance score).
 	 * Export must write this verbatim when present — sequential rebuild breaks UniPad.
@@ -42,16 +46,23 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	fun setAutoPlay(
 		presses: List<com.bobbypfreely.lpbf.unipack.AutoPlayPress>,
 		rawText: String? = null,
+		elements: List<com.bobbypfreely.lpbf.unipack.AutoPlayElement> = emptyList(),
 	) {
 		_autoPlay.value = presses
+		_autoPlayElements.value = elements
 		if (rawText != null) {
 			importedAutoPlayRaw = rawText.ifBlank { null }
 		}
 		val note = buildString {
 			if (presses.isEmpty()) append(" (none — labels fall back to map order)")
+			if (elements.isNotEmpty()) append(" elements=${elements.size}")
 			if (!importedAutoPlayRaw.isNullOrBlank()) append(" [raw preserved for export]")
 		}
 		logDebug("AutoPlay: ${presses.size} presses$note")
+	}
+
+	fun setAutoPlayProgram(program: com.bobbypfreely.lpbf.unipack.AutoPlayProgram) {
+		setAutoPlay(program.presses, program.rawText, program.elements)
 	}
 
 	fun clearImportedAutoPlayRaw() {
@@ -157,6 +168,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		_decodedAudio.value = audio
 		_markingSession.value = MarkingSession(audio.totalDurationMs)
 		_autoPlay.value = emptyList()
+		_autoPlayElements.value = emptyList()
 		importedAutoPlayRaw = null
 		notifySegmentsChanged()
 	}
@@ -465,6 +477,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		cachedFilePath = result.cachedFilePath
 		_decodedAudio.value = result.decodedAudio
 		_autoPlay.value = emptyList()
+		_autoPlayElements.value = emptyList()
 		importedAutoPlayRaw = null
 		_markingSession.value = MarkingSession.restore(
 			result.decodedAudio.totalDurationMs,
@@ -646,6 +659,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		previewCycleIndex.clear()
 		lightshowCycleIndex.clear()
 		_autoPlay.value = emptyList()
+		_autoPlayElements.value = emptyList()
 		importedAutoPlayRaw = null
 		enterUiMode(UiMode.PLAY)
 		notifySegmentsChanged()
