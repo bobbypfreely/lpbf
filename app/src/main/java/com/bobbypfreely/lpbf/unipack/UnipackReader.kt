@@ -16,17 +16,6 @@ data class UnipackInfo(
 	val website: String?,
 )
 
-/**
- * One keySound line, already converted to LPBF's 0-indexed ButtonRef.
- *
- * loop (Unipad semantics, NOT adjusted):
- *   0 = play only while held
- *   1 = play once (also the default when the field is omitted on disk)
- *   N = play N times
- *
- * wormhole: 0-indexed target chain, or -1 if none.
- *   On disk a positive integer is the 1-based chain to jump to; we store chain-1.
- */
 data class UnipackKeySoundEntry(
 	val button: ButtonRef,
 	val soundRelativePath: String,
@@ -40,25 +29,11 @@ data class UnipackReadResult(
 	val soundsDir: File,
 	val keyLedDir: File?,
 	val autoPlay: List<AutoPlayPress>,
-	/** Exact autoPlay file text from the pack (on/off/delay performance). Preserve on export. */
+	val autoPlayProgram: AutoPlayProgram? = null,
 	val autoPlayRaw: String? = null,
 	val warnings: List<String>,
 )
 
-/**
- * Reads a Unipack zip/folder -- format taken from Unipad's own UniPackFolder.kt so
- * anything read here stays compatible with real Unipad/Launchpad hardware.
- *
- * keySound line on disk (1-indexed):
- *   chain  x  y  soundFileName  [loop]  [wormhole]
- *
- * Coordinate system:
- *   x = vertical (row), y = horizontal (column) -- same as Unipad docs.
- *   Converted to 0-indexed ButtonRef(chain, x, y) here.
- *
- * Same chain/x/y MAY repeat across lines -- Unipad queues those as multi-hit;
- * LPBF imports each line as its own segment stacked on that pad.
- */
 object UnipackReader {
 
 	fun extractZip(zipFile: File, targetDir: File) {
@@ -162,18 +137,21 @@ object UnipackReader {
 			}
 		}
 
-		val autoPlayRaw = try {
-			autoPlayFile?.takeIf { it.exists() && it.length() > 0L }?.readText()
-		} catch (e: Exception) {
-			warnings.add("autoPlay: couldn't read raw file (${e.message})")
-			null
-		}
-		val autoPlay = try {
-			autoPlayFile?.let { AutoPlayReader.read(it) } ?: emptyList()
+		val autoPlayProgram = try {
+			autoPlayFile?.let {
+				AutoPlayReader.read(
+					it,
+					buttonX = buttonX.coerceAtLeast(8),
+					buttonY = buttonY.coerceAtLeast(8),
+					chainCount = chainCount.coerceIn(1, 24),
+				)
+			}
 		} catch (e: Exception) {
 			warnings.add("autoPlay: couldn't be parsed (${e.message}) -- falling back to keySound file order")
-			emptyList()
+			null
 		}
+		val autoPlay = autoPlayProgram?.presses.orEmpty()
+		val autoPlayRaw = autoPlayProgram?.rawText
 
 		return UnipackReadResult(
 			info = UnipackInfo(title, producerName, buttonX, buttonY, chainCount, squareButton, website),
@@ -181,6 +159,7 @@ object UnipackReader {
 			soundsDir = soundsDir,
 			keyLedDir = keyLedDir,
 			autoPlay = autoPlay,
+			autoPlayProgram = autoPlayProgram,
 			autoPlayRaw = autoPlayRaw,
 			warnings = warnings,
 		)
