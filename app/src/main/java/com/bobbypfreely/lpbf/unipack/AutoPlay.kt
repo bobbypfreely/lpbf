@@ -33,6 +33,7 @@ sealed class AutoPlayElement {
 
 /**
  * Flattened press for labels / guide (derived from On elements + cumulative delay clock).
+ * Kept for existing LPBF UI that numbers pads from the performance order.
  */
 data class AutoPlayPress(
 	val button: ButtonRef,
