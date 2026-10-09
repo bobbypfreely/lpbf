@@ -16,6 +16,17 @@ data class UnipackInfo(
 	val website: String?,
 )
 
+/**
+ * One keySound line, already converted to LPBF's 0-indexed ButtonRef.
+ *
+ * loop (Unipad semantics, NOT adjusted):
+ *   0 = play only while held
+ *   1 = play once (also the default when the field is omitted on disk)
+ *   N = play N times
+ *
+ * wormhole: 0-indexed target chain, or -1 if none.
+ *   On disk a positive integer is the 1-based chain to jump to; we store chain-1.
+ */
 data class UnipackKeySoundEntry(
 	val button: ButtonRef,
 	val soundRelativePath: String,
@@ -29,11 +40,27 @@ data class UnipackReadResult(
 	val soundsDir: File,
 	val keyLedDir: File?,
 	val autoPlay: List<AutoPlayPress>,
+	/** Full UniPad-style element program (on/off/chain/delay). */
 	val autoPlayProgram: AutoPlayProgram? = null,
+	/** Exact autoPlay file text from the pack. Preserve on export. */
 	val autoPlayRaw: String? = null,
 	val warnings: List<String>,
 )
 
+/**
+ * Reads a Unipack zip/folder -- format taken from Unipad's own UniPackFolder.kt so
+ * anything read here stays compatible with real Unipad/Launchpad hardware.
+ *
+ * keySound line on disk (1-indexed):
+ *   chain  x  y  soundFileName  [loop]  [wormhole]
+ *
+ * Coordinate system:
+ *   x = vertical (row), y = horizontal (column) -- same as Unipad docs.
+ *   Converted to 0-indexed ButtonRef(chain, x, y) here.
+ *
+ * Same chain/x/y MAY repeat across lines -- Unipad queues those as multi-hit;
+ * LPBF imports each line as its own segment stacked on that pad.
+ */
 object UnipackReader {
 
 	fun extractZip(zipFile: File, targetDir: File) {
@@ -112,11 +139,14 @@ object UnipackReader {
 				val split = s.trim().split("\\s+".toRegex())
 				if (split.size < 4) return@forEach
 				try {
+					// Disk is 1-indexed → ButtonRef is 0-indexed
 					val c = split[0].toInt() - 1
-					val x = split[1].toInt() - 1
-					val y = split[2].toInt() - 1
+					val x = split[1].toInt() - 1   // vertical (row)
+					val y = split[2].toInt() - 1   // horizontal (column)
 					val soundURL = split[3]
+					// Keep Unipad loop semantics exactly (do NOT subtract 1)
 					val loop = if (split.size >= 5) split[4].toInt() else 1
+					// Wormhole on disk is 1-based chain number; store 0-based, -1 = none
 					val wormhole = if (split.size >= 6) {
 						val rawWh = split[5].toInt()
 						if (rawWh <= 0) -1 else rawWh - 1
