@@ -25,7 +25,6 @@ import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 /**
  * Shell with no side/bottom pills. Top bar first-press opens drawers.
  * AP plays autoPlay file sequence, or all cuts in mark order when none.
- * Silent autosave on mode change / onPause. First-open tips per mode.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -181,17 +180,17 @@ class MainActivity : AppCompatActivity() {
 	}
 
 	private fun showDonateDialog() {
-		val msg = "LPBF is free now forever — no ads, no paywalls. This is something I have always wanted, THIS IS NOT IN COMPETITION OR MEANT TO REPLACE THE ORIGINAL, THIS IS MEANT TO COMPLIMENT IT WITH NEW PROJECTS FOR EVERYONE, So go download Unipad.\n\n" +
-			"Optional tip let's me know I'm right on the correct path.\n\n" +
+		val msg = "LPBF is free forever — no ads, no paywall.\n\n" +
+			"Optional tip keeps the lights on.\n\n" +
 			"© Bobby P. Freely · LPBF\nbobbyp.freely@gmail.com"
 		AlertDialog.Builder(this)
 			.setTitle("Support LPBF")
 			.setMessage(msg)
 			.setPositiveButton("Cash App") { _, _ ->
 				try {
-					startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cash.app/$" + "Mysterp")))
+					startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cash.app/\$Mysterp")))
 				} catch (e: Exception) {
-					android.widget.Toast.makeText(this, "Cash App: $" + "Mysterp", android.widget.Toast.LENGTH_LONG).show()
+					android.widget.Toast.makeText(this, "Cash App: \$Mysterp", android.widget.Toast.LENGTH_LONG).show()
 				}
 			}
 			.setNeutralButton("PayPal") { _, _ ->
@@ -417,9 +416,18 @@ class MainActivity : AppCompatActivity() {
 			}.setNegativeButton("Cancel", null).show()
 	}
 
+	/** Play AutoPlay sequence (UniPad element clock), or mark-order fallback. */
 	private fun startAutoPlaySequence() {
 		stopAutoPlaySequence()
-		val session = viewModel.markingSession.value
+		val elements = viewModel.autoPlayElements.value.orEmpty()
+		if (elements.isNotEmpty()) {
+			autoPlayRunning = true
+			updateModeChrome()
+			android.util.Log.i("MainActivity", "AutoPlay sequence: ${elements.size} elements")
+			runAutoPlayElements(elements, 0)
+			return
+		}
+		// Legacy press list with timestamps (older imports)
 		val presses = viewModel.autoPlay.value.orEmpty()
 		if (presses.isNotEmpty()) {
 			autoPlayRunning = true
@@ -429,15 +437,18 @@ class MainActivity : AppCompatActivity() {
 				val delay = (press.timestampMs - t0).toLong().coerceAtLeast(0L)
 				autoPlayHandler.postDelayed({
 					if (!autoPlayRunning) return@postDelayed
-					fireAutoPlayPress(press)
+					fireAutoPlayOn(press.button, press.occurrenceIndex)
 					if (idx == presses.lastIndex) {
 						autoPlayHandler.postDelayed({ stopAutoPlaySequence() }, 400L)
 					}
 				}, delay)
 			}
+			android.util.Log.i("MainActivity", "AutoPlay sequence: ${presses.size} presses (legacy)")
 			return
 		}
+		val session = viewModel.markingSession.value
 		if (session == null || session.segmentCount == 0) {
+			android.util.Log.i("MainActivity", "AutoPlay: no cuts yet")
 			modeLabel.text = "AP: mark cuts first"
 			return
 		}
@@ -453,26 +464,70 @@ class MainActivity : AppCompatActivity() {
 				if (!autoPlayRunning) return@postDelayed
 				if (b != null) {
 					launchpadGrid.setPadLit(b.x, b.y, 0xFF00ADB5.toInt(), "${idx + 1}")
+					playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
 				} else {
 					modeLabel.text = "AP cut ${idx + 1}/${cuts.size}"
+					playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
 				}
-				playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
 				if (idx == cuts.lastIndex) {
 					autoPlayHandler.postDelayed({ stopAutoPlaySequence() }, hold)
 				}
 			}, delay)
 			acc += hold
 		}
+		android.util.Log.i("MainActivity", "AutoPlay fallback: ${cuts.size} cuts (no autoPlay file)")
 	}
 
-	private fun fireAutoPlayPress(press: com.bobbypfreely.lpbf.unipack.AutoPlayPress) {
+	/**
+	 * UniPad AutoPlayRunner-style clock: process all non-delay elements immediately,
+	 * then wait on Delay before continuing. On → fire sound; Off → visual only for now.
+	 */
+	private fun runAutoPlayElements(
+		elements: List<com.bobbypfreely.lpbf.unipack.AutoPlayElement>,
+		startIndex: Int,
+	) {
+		if (!autoPlayRunning) return
+		var i = startIndex
+		while (i < elements.size) {
+			when (val el = elements[i]) {
+				is com.bobbypfreely.lpbf.unipack.AutoPlayElement.Delay -> {
+					val wait = el.delayMs.toLong().coerceAtLeast(0L)
+					val next = i + 1
+					if (wait <= 0L) {
+						i = next
+						continue
+					}
+					autoPlayHandler.postDelayed({
+						if (!autoPlayRunning) return@postDelayed
+						runAutoPlayElements(elements, next)
+					}, wait)
+					return
+				}
+				is com.bobbypfreely.lpbf.unipack.AutoPlayElement.On -> {
+					fireAutoPlayOn(el.button, el.occurrenceIndex)
+					i++
+				}
+				is com.bobbypfreely.lpbf.unipack.AutoPlayElement.Off -> {
+					// One-shots already timed by PadVoicePool duration; Off is for hold/LED.
+					launchpadGrid.setPadLit(el.button.x, el.button.y, 0xFF263238.toInt(), null)
+					i++
+				}
+				is com.bobbypfreely.lpbf.unipack.AutoPlayElement.Chain -> {
+					viewModel.setCurrentChain(el.chain)
+					i++
+				}
+			}
+		}
+		autoPlayHandler.postDelayed({ stopAutoPlaySequence() }, 300L)
+	}
+
+	private fun fireAutoPlayOn(button: com.bobbypfreely.lpbf.marking.ButtonRef, occurrenceIndex: Int) {
 		val session = viewModel.markingSession.value ?: return
-		val b = press.button
-		val matches = session.segments().withIndex().filter { it.value.button == b }
+		val matches = session.segments().withIndex().filter { it.value.button == button }
 		if (matches.isEmpty()) return
-		val pick = matches[press.occurrenceIndex % matches.size]
+		val pick = matches[occurrenceIndex % matches.size]
 		val seg = pick.value
-		launchpadGrid.setPadLit(b.x, b.y, 0xFF00ADB5.toInt(), "${press.occurrenceIndex + 1}")
+		launchpadGrid.setPadLit(button.x, button.y, 0xFF00ADB5.toInt(), "${occurrenceIndex + 1}")
 		playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
 	}
 
