@@ -1,73 +1,103 @@
 package com.bobbypfreely.lpbf.unipack
 
 import com.bobbypfreely.lpbf.marking.ButtonRef
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
-
-/** One real button press, in true chronological order, with the exact millisecond it
- * happens and which slot in that pad's keySound queue is firing at that moment.
- * [occurrenceIndex] is 0 for the first time this exact (chain,x,y) is pressed since the
- * last chain switch, 1 for the second, etc. -- matches the real circular-queue-reset
- * rule documented at unipad.io/docs/unipack/autoPlay ("switching chains resets all
- * button circular queue counters"). Still needs to be taken mod that pad's keySound
- * entry count by the caller if it can exceed the number of entries actually mapped. */
-data class AutoPlayPress(val button: ButtonRef, val timestampMs: Int, val occurrenceIndex: Int)
 
 /**
- * Parses an optional autoPlay file -- format from unipad.io/docs/unipack/autoPlay:
- *   chain <n> / c <n>         switch the active chain (1-indexed on disk, like keySound)
- *   on <x> <y> / o <x> <y>    press down (paired with a later off)
- *   off <x> <y> / f <x> <y>   release -- doesn't itself start a new press
- *   touch <x> <y> / t <x> <y> instantaneous on+off at once
- *   delay <ms> / d <ms>       advance the clock before the next event
+ * Parses UniPad autoPlay files — behavior aligned with UniPackFolder.autoPlay()
+ * in kimjisub/unipad-android (long and short tokens).
  *
- * Running this top to bottom is the ONLY source of truth for when a pad actually gets
- * played during the real performance -- keySound's file order is often just whatever
- * raster order the authoring tool wrote entries in, and carries no relationship to real
- * playback order or timing at all.
+ *   chain|c N     switch chain (1-based on disk), reset pad occurrence counters
+ *   on|o X Y      press (queue slot = occurrence for this pad)
+ *   off|f X Y     release (no new queue slot)
+ *   touch|t X Y   on + off with no delay between
+ *   delay|d MS    advance clock
  *
- * autoPlay is optional -- most packs don't have one yet (none of Bobby's own currently
- * do). Callers must fall back to keySound's file order when this returns empty.
+ * Coordinates and chain are 1-based on disk → 0-based [ButtonRef].
  */
 object AutoPlayReader {
 
-	fun read(file: File): List<AutoPlayPress> {
-		val presses = mutableListOf<AutoPlayPress>()
-		var chain = 0
-		var t = 0
-		var occurrenceCounts = mutableMapOf<ButtonRef, Int>()
+	fun read(file: File, buttonX: Int = 8, buttonY: Int = 8, chainCount: Int = 24): AutoPlayProgram {
+		val raw = try {
+			file.takeIf { it.exists() && it.length() > 0L }?.readText()
+		} catch (_: Exception) {
+			null
+		}
+		if (raw.isNullOrBlank()) return AutoPlayProgram(emptyList(), emptyList(), raw)
+		return parse(raw, buttonX, buttonY, chainCount)
+	}
 
-		BufferedReader(InputStreamReader(file.inputStream())).useLines { lines ->
-			lines.forEach { raw ->
-				val s = raw.trim()
-				if (s.isEmpty()) return@forEach
-				val split = s.split("\\s+".toRegex())
-				try {
-					when (split[0]) {
-						"chain", "c" -> {
-							chain = split[1].toInt() - 1
-							// A chain switch resets every pad's queue counter -- without
-							// this, occurrence tracking silently drifts wrong after the
-							// first chain change in the song.
-							occurrenceCounts = mutableMapOf()
-						}
-						"on", "o", "touch", "t" -> {
-							val x = split[1].toInt() - 1
-							val y = split[2].toInt() - 1
-							val button = ButtonRef(chain, x, y)
-							val occurrence = occurrenceCounts.getOrDefault(button, 0)
-							occurrenceCounts[button] = occurrence + 1
-							presses.add(AutoPlayPress(button, t, occurrence))
-						}
-						"off", "f" -> { /* release -- no new press to record */ }
-						"delay", "d" -> t += (split[1].toIntOrNull() ?: 0)
+	fun parse(
+		text: String,
+		buttonX: Int = 8,
+		buttonY: Int = 8,
+		chainCount: Int = 24,
+	): AutoPlayProgram {
+		val elements = ArrayList<AutoPlayElement>()
+		val map = Array(buttonX.coerceAtLeast(1)) { IntArray(buttonY.coerceAtLeast(1)) }
+		var currChain = 0
+
+		for (rawLine in text.lineSequence()) {
+			val s = rawLine.trim()
+			if (s.isEmpty()) continue
+			val split = s.split(Regex("\\s+"))
+			if (split.isEmpty()) continue
+			val option = split[0]
+			try {
+				when (option) {
+					"on", "o" -> {
+						val x = split[1].toInt() - 1
+						val y = split[2].toInt() - 1
+						if (x !in 0 until buttonX || y !in 0 until buttonY) continue
+						val num = map[x][y]
+						val button = ButtonRef(currChain, x, y)
+						elements.add(AutoPlayElement.On(button, num))
+						map[x][y] = num + 1
 					}
-				} catch (e: Exception) {
-					// Malformed line -- skip it rather than lose the rest of the file.
+					"off", "f" -> {
+						val x = split[1].toInt() - 1
+						val y = split[2].toInt() - 1
+						if (x !in 0 until buttonX || y !in 0 until buttonY) continue
+						elements.add(AutoPlayElement.Off(ButtonRef(currChain, x, y)))
+					}
+					"touch", "t" -> {
+						val x = split[1].toInt() - 1
+						val y = split[2].toInt() - 1
+						if (x !in 0 until buttonX || y !in 0 until buttonY) continue
+						val num = map[x][y]
+						val button = ButtonRef(currChain, x, y)
+						elements.add(AutoPlayElement.On(button, num))
+						elements.add(AutoPlayElement.Off(button))
+						map[x][y] = num + 1
+					}
+					"chain", "c" -> {
+						val chain = split[1].toInt() - 1
+						if (chain < 0 || chain >= chainCount) continue
+						currChain = chain
+						elements.add(AutoPlayElement.Chain(chain))
+						map.forEach { row -> row.fill(0) }
+					}
+					"delay", "d" -> {
+						val delay = split[1].toIntOrNull() ?: continue
+						elements.add(AutoPlayElement.Delay(delay.coerceAtLeast(0)))
+					}
+					else -> { }
 				}
+			} catch (_: Exception) {
 			}
 		}
-		return presses
+
+		val presses = ArrayList<AutoPlayPress>()
+		var t = 0
+		for (el in elements) {
+			when (el) {
+				is AutoPlayElement.Delay -> t += el.delayMs
+				is AutoPlayElement.On -> presses.add(AutoPlayPress(el.button, t, el.occurrenceIndex))
+				else -> {}
+			}
+		}
+		return AutoPlayProgram(elements, presses, text)
 	}
+
+	fun readPresses(file: File): List<AutoPlayPress> = read(file).presses
 }
