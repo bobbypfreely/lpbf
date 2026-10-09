@@ -1,7 +1,9 @@
 package com.bobbypfreely.lpbf.unipack
 
 import com.bobbypfreely.lpbf.marking.ButtonRef
+import java.io.BufferedReader
 import java.io.File
+import java.io.InputStreamReader
 
 /**
  * Parses UniPad autoPlay files — behavior aligned with UniPackFolder.autoPlay()
@@ -34,8 +36,10 @@ object AutoPlayReader {
 		chainCount: Int = 24,
 	): AutoPlayProgram {
 		val elements = ArrayList<AutoPlayElement>()
+		// occurrence map: per pad index since last chain switch (UniPad map[x][y])
 		val map = Array(buttonX.coerceAtLeast(1)) { IntArray(buttonY.coerceAtLeast(1)) }
 		var currChain = 0
+		var clockMs = 0
 
 		for (rawLine in text.lineSequence()) {
 			val s = rawLine.trim()
@@ -80,10 +84,12 @@ object AutoPlayReader {
 					"delay", "d" -> {
 						val delay = split[1].toIntOrNull() ?: continue
 						elements.add(AutoPlayElement.Delay(delay.coerceAtLeast(0)))
+						clockMs += delay.coerceAtLeast(0)
 					}
-					else -> { }
+					else -> { /* skip unknown */ }
 				}
 			} catch (_: Exception) {
+				// malformed line — skip like UniPad continues on error after addErr
 			}
 		}
 
@@ -92,12 +98,15 @@ object AutoPlayReader {
 		for (el in elements) {
 			when (el) {
 				is AutoPlayElement.Delay -> t += el.delayMs
-				is AutoPlayElement.On -> presses.add(AutoPlayPress(el.button, t, el.occurrenceIndex))
+				is AutoPlayElement.On -> presses.add(
+					AutoPlayPress(el.button, t, el.occurrenceIndex)
+				)
 				else -> {}
 			}
 		}
 		return AutoPlayProgram(elements, presses, text)
 	}
 
+	/** Legacy helper used by older call sites expecting only presses. */
 	fun readPresses(file: File): List<AutoPlayPress> = read(file).presses
 }
