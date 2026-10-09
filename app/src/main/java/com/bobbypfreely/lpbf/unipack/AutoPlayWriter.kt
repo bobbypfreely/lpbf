@@ -34,6 +34,7 @@ object AutoPlayWriter {
 	fun build(events: List<Pair<ButtonRef, Int>>): String {
 		if (events.isEmpty()) return ""
 		val entries = events.mapIndexed { i, (button, dur) ->
+			// Fake sequential starts so buildTimeline can schedule on/off
 			UnipackWriter.SoundEntry(
 				button = button,
 				soundFileName = "%03d.wav".format(i + 1),
@@ -73,6 +74,7 @@ object AutoPlayWriter {
 			timed.add(TimedEvent(start + hold, isOn = false, button = b))
 		}
 
+		// Sort: time ascending; at same time process offs before ons (release then press)
 		timed.sortWith(
 			compareBy<TimedEvent> { it.timeMs }
 				.thenBy { if (it.isOn) 1 else 0 }
