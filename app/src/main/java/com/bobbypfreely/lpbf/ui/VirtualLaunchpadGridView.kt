@@ -12,8 +12,15 @@ import kotlin.math.min
 
 /**
  * On-screen Launchpad: 8 top function keys + 8x8 main grid + 8 side chain buttons.
- * Pad labels support Unipad-style space-separated cut numbers (multi-line when dense).
- * Logical pad coords: x = row (0 top), y = column (0 left).
+ * Matches hardware layout (MK2 / X / Mini style): top row across columns, right column for chains.
+ *
+ * Logical pad coords stay Unipad convention: x = row (0 top), y = column (0 left).
+ * Chain buttons call [PadInputListener.onChainTouch]; top row calls [onFunctionKeyTouch].
+ *
+ * Visual:
+ *  - Top function keys: full cell size, circular
+ *  - Side chain keys: smaller circular pills
+ *  - Main pads: rounded corners so black bezel forms a diamond where four pads meet
  */
 class VirtualLaunchpadGridView @JvmOverloads constructor(
 	context: Context,
@@ -33,7 +40,7 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 	private var pressedChain: Int? = null
 	private var pressedFunction: Int? = null
 
-	private val bezelPaint = Paint().apply { color = Color.parseColor("#12121A"); isAntiAlias = true }
+	private val bezelPaint = Paint().apply { color = Color.parseColor("#0A0A10"); isAntiAlias = true }
 	private val cellPaintOff = Paint().apply { color = Color.parseColor("#2A2A3E"); isAntiAlias = true }
 	private val cellPaintPressed = Paint().apply { color = Color.parseColor("#00ADB5"); isAntiAlias = true }
 	private val chainPaintOff = Paint().apply { color = Color.parseColor("#1E1E30"); isAntiAlias = true }
@@ -58,8 +65,14 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 		strokeWidth = 4f
 	}
 
-	private val gapPx = 5f
-	private val cornerRadius = 8f
+	/** Gap between main pads — black bezel shows through as diamonds at 4-corners. */
+	private val gapPx = 7f
+	/** Pad corner radius as fraction of cell (higher = more rounded → clearer diamond). */
+	private val padCornerFraction = 0.28f
+	/** Chain button diameter as fraction of cell (smaller than top). */
+	private val chainSizeFraction = 0.55f
+	/** Top function diameter as fraction of cell (near full, no shrink). */
+	private val topSizeFraction = 0.88f
 
 	private var originX = 0f
 	private var originY = 0f
@@ -129,83 +142,30 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 		mainTop = originY + topStrip
 	}
 
-	/** Draw Unipad-style space-separated cut numbers, wrapping to multiple lines. */
-	private fun drawPadLabel(canvas: Canvas, rect: RectF, label: String) {
-		val parts = label.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-		if (parts.isEmpty()) return
-
-		val maxW = rect.width() * 0.92f
-		val maxH = rect.height() * 0.92f
-
-		// Prefer denser text when many notes on one pad
-		var textSize = when {
-			parts.size <= 1 -> cell * 0.34f
-			parts.size <= 4 -> cell * 0.22f
-			parts.size <= 9 -> cell * 0.16f
-			else -> cell * 0.12f
-		}
-		labelPaint.textSize = textSize
-
-		// Pack into lines that fit width
-		fun packLines(size: Float): List<String> {
-			labelPaint.textSize = size
-			val lines = mutableListOf<String>()
-			var line = StringBuilder()
-			for (p in parts) {
-				val candidate = if (line.isEmpty()) p else "$line $p"
-				if (labelPaint.measureText(candidate) <= maxW) {
-					line = StringBuilder(candidate)
-				} else {
-					if (line.isNotEmpty()) lines.add(line.toString())
-					line = StringBuilder(p)
-				}
-			}
-			if (line.isNotEmpty()) lines.add(line.toString())
-			return lines
-		}
-
-		var lines = packLines(textSize)
-		var lineHeight = labelPaint.fontSpacing
-		// Shrink until height fits
-		var guard = 0
-		while (lines.size * lineHeight > maxH && textSize > 6f && guard < 12) {
-			textSize *= 0.88f
-			labelPaint.textSize = textSize
-			lines = packLines(textSize)
-			lineHeight = labelPaint.fontSpacing
-			guard++
-		}
-
-		val totalH = lines.size * lineHeight
-		var y = rect.centerY() - totalH / 2f - (labelPaint.ascent() + labelPaint.descent()) / 2f
-		// Use baseline-friendly layout
-		y = rect.centerY() - totalH / 2f - labelPaint.ascent()
-		for (line in lines) {
-			canvas.drawText(line, rect.centerX(), y, labelPaint)
-			y += lineHeight
-		}
-	}
-
 	override fun onDraw(canvas: Canvas) {
 		super.onDraw(canvas)
 		if (width <= 0 || height <= 0) return
 		layoutGeometry()
 
 		val bezel = RectF(originX, originY, originX + cell * 9f, originY + cell * 9f)
-		canvas.drawRoundRect(bezel, 12f, 12f, bezelPaint)
+		canvas.drawRoundRect(bezel, 14f, 14f, bezelPaint)
 
+		// Top function keys — circular, full-ish size (no shrink)
+		val topDiameter = cell * topSizeFraction
+		val topRadius = topDiameter / 2f
 		for (f in 0 until 8) {
-			val left = mainLeft + f * cell + gapPx / 2
-			val top = originY + gapPx / 2
-			val right = mainLeft + (f + 1) * cell - gapPx / 2
-			val bottom = originY + topStrip - gapPx / 2
+			val cx = mainLeft + f * cell + cell / 2f
+			val cy = originY + topStrip / 2f
 			val paint = if (pressedFunction == f) topPaintPressed else topPaintOff
-			canvas.drawRoundRect(RectF(left, top, right, bottom), cornerRadius, cornerRadius, paint)
+			canvas.drawCircle(cx, cy, topRadius, paint)
+			chainLabelPaint.color = if (pressedFunction == f) Color.parseColor("#0F0F1A") else Color.parseColor("#CCCCDD")
 			chainLabelPaint.textSize = cell * 0.28f
-			val ty = (top + bottom) / 2f - (chainLabelPaint.descent() + chainLabelPaint.ascent()) / 2
-			canvas.drawText((f + 1).toString(), (left + right) / 2f, ty, chainLabelPaint)
+			val ty = cy - (chainLabelPaint.descent() + chainLabelPaint.ascent()) / 2
+			canvas.drawText((f + 1).toString(), cx, ty, chainLabelPaint)
 		}
 
+		// Main 8x8 — rounded pads; gaps + radius leave black diamonds between four pads
+		val padCorner = cell * padCornerFraction
 		val litPaint = Paint().apply { isAntiAlias = true }
 		for (lx in 0 until gridHeight) {
 			for (ly in 0 until gridWidth) {
@@ -222,35 +182,38 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 					litPads.containsKey(lx to ly) -> litPaint.apply { color = litPads[lx to ly]!! }
 					else -> cellPaintOff
 				}
-				canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
+				canvas.drawRoundRect(rect, padCorner, padCorner, paint)
 
 				highlightedPads[lx to ly]?.let { hc ->
 					highlightPaint.color = hc
 					val inset = highlightPaint.strokeWidth / 2
 					canvas.drawRoundRect(
 						RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset),
-						cornerRadius, cornerRadius, highlightPaint
+						padCorner, padCorner, highlightPaint
 					)
 				}
 
 				padLabels[lx to ly]?.let { label ->
-					drawPadLabel(canvas, rect, label)
+					labelPaint.textSize = cell * 0.32f
+					val textY = rect.centerY() - (labelPaint.descent() + labelPaint.ascent()) / 2
+					canvas.drawText(label, rect.centerX(), textY, labelPaint)
 				}
 			}
 		}
 
+		// Side chain buttons — smaller circles, centered in side cells
+		val chainDiameter = cell * chainSizeFraction
+		val chainRadius = chainDiameter / 2f
 		for (c in 0 until 8) {
-			val left = mainLeft + 8 * cell + gapPx / 2
-			val top = mainTop + c * cell + gapPx / 2
-			val right = originX + 9 * cell - gapPx / 2
-			val bottom = mainTop + (c + 1) * cell - gapPx / 2
+			val cx = mainLeft + 8 * cell + cell / 2f
+			val cy = mainTop + c * cell + cell / 2f
 			val on = c == activeChain || pressedChain == c
 			val paint = if (on) chainPaintOn else chainPaintOff
-			canvas.drawRoundRect(RectF(left, top, right, bottom), cornerRadius, cornerRadius, paint)
+			canvas.drawCircle(cx, cy, chainRadius, paint)
 			chainLabelPaint.color = if (on) Color.parseColor("#0F0F1A") else Color.parseColor("#CCCCDD")
-			chainLabelPaint.textSize = cell * 0.32f
-			val ty = (top + bottom) / 2f - (chainLabelPaint.descent() + chainLabelPaint.ascent()) / 2
-			canvas.drawText((c + 1).toString(), (left + right) / 2f, ty, chainLabelPaint)
+			chainLabelPaint.textSize = cell * 0.26f
+			val ty = cy - (chainLabelPaint.descent() + chainLabelPaint.ascent()) / 2
+			canvas.drawText((c + 1).toString(), cx, ty, chainLabelPaint)
 		}
 	}
 
