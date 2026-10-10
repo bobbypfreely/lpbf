@@ -528,7 +528,19 @@ class MainActivity : AppCompatActivity() {
 		val pick = matches[occurrenceIndex % matches.size]
 		val seg = pick.value
 		launchpadGrid.setPadLit(button.x, button.y, 0xFF00ADB5.toInt(), "${occurrenceIndex + 1}")
-		playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
+		// Discrete Unipack WAV avoids concat-timeline bleed (matches UniPad sample play)
+		val discrete = viewModel.soundPathFor(button, occurrenceIndex)
+		val dur = seg.durationMs.coerceAtLeast(1)
+		if (discrete != null) {
+			try {
+				harness.fireFile(discrete, dur)
+			} catch (e: Exception) {
+				android.util.Log.e("MainActivity", "AP discrete fire failed", e)
+				playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
+			}
+		} else {
+			playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
+		}
 	}
 
 	private fun stopAutoPlaySequence() {
