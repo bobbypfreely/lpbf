@@ -41,6 +41,42 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	 * Export must write this verbatim when present — sequential rebuild breaks UniPad.
 	 */
 	var importedAutoPlayRaw: String? = null
+
+	/** Exact keySound file from imported pack — multi-hit queue order must not be rebuilt. */
+	var importedKeySoundRaw: String? = null
+
+	/** Original sound file names in segment/keySound order (e.g. "kick.wav", "001.wav"). */
+	private val importedSoundNames = ArrayList<String>()
+
+	/** Per-pad discrete WAV paths from Unipack import (keySound order = occurrence). */
+	private val padSoundPaths = HashMap<com.bobbypfreely.lpbf.marking.ButtonRef, List<String>>()
+
+	fun setPadSoundPaths(map: Map<com.bobbypfreely.lpbf.marking.ButtonRef, List<String>>) {
+		padSoundPaths.clear()
+		padSoundPaths.putAll(map)
+		logDebug("Pad sound files: ${map.values.sumOf { it.size }} path(s) on ${map.size} pad(s)")
+	}
+
+	fun setImportedKeySoundRaw(text: String?) {
+		importedKeySoundRaw = text?.takeIf { it.isNotBlank() }
+		if (importedKeySoundRaw != null) logDebug("keySound raw preserved for export (${importedKeySoundRaw!!.length} chars)")
+	}
+
+	fun setImportedSoundNames(names: List<String>) {
+		importedSoundNames.clear()
+		importedSoundNames.addAll(names)
+	}
+
+	fun soundPathFor(button: com.bobbypfreely.lpbf.marking.ButtonRef, occurrenceIndex: Int): String? {
+		val list = padSoundPaths[button] ?: return null
+		if (list.isEmpty()) return null
+		return list[occurrenceIndex % list.size]
+	}
+
+	fun clearPadSoundPaths() {
+		padSoundPaths.clear()
+		importedSoundNames.clear()
+	}
 		private set
 
 	fun setAutoPlay(
@@ -170,6 +206,9 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		_autoPlay.value = emptyList()
 		_autoPlayElements.value = emptyList()
 		importedAutoPlayRaw = null
+		importedKeySoundRaw = null
+		importedSoundNames.clear()
+		padSoundPaths.clear()
 		notifySegmentsChanged()
 	}
 
@@ -479,6 +518,9 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		_autoPlay.value = emptyList()
 		_autoPlayElements.value = emptyList()
 		importedAutoPlayRaw = null
+		importedKeySoundRaw = null
+		importedSoundNames.clear()
+		padSoundPaths.clear()
 		_markingSession.value = MarkingSession.restore(
 			result.decodedAudio.totalDurationMs,
 			result.marks,
@@ -661,6 +703,9 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		_autoPlay.value = emptyList()
 		_autoPlayElements.value = emptyList()
 		importedAutoPlayRaw = null
+		importedKeySoundRaw = null
+		importedSoundNames.clear()
+		padSoundPaths.clear()
 		enterUiMode(UiMode.PLAY)
 		notifySegmentsChanged()
 	}
@@ -670,6 +715,23 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		data class Blocked(val overCapSegmentIndices: List<Int>) : UnipackExportResult()
 		object NothingToExport : UnipackExportResult()
 		data class Failed(val message: String) : UnipackExportResult()
+	}
+
+
+	/**
+	 * Export autoPlay priority:
+	 * 1) Imported raw text (exact UniPad performance file)
+	 * 2) Serialize stored elements (still correct timing; never concat startMs)
+	 * 3) null → writer builds from entry startMs (hand-marked packs only)
+	 */
+	private fun resolveAutoPlayForExport(): String? {
+		val raw = importedAutoPlayRaw
+		if (!raw.isNullOrBlank()) return raw
+		val elements = _autoPlayElements.value.orEmpty()
+		if (elements.isNotEmpty()) {
+			return com.bobbypfreely.lpbf.unipack.AutoPlayWriter.fromElements(elements)
+		}
+		return null
 	}
 
 	fun createUnipack(context: android.content.Context, title: String, producerName: String): UnipackExportResult {
@@ -700,10 +762,27 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 				keyLedFileName = if (occurrence == 0) base else "$base ${'a' + occurrence - 1}"
 				lightshowCount++
 			}
+			val segIndex = clip.index - 1
+			val discretePath = soundPathFor(button, occurrence)
+			val originalName = importedSoundNames.getOrNull(segIndex)
+			val soundName = originalName?.takeIf { it.isNotBlank() }
+				?.removePrefix("sounds/")
+				?.removePrefix("Sounds/")
+				?.trim('/')
+				?.takeIf { it.isNotBlank() }
+				?: ex.fileName
+			val wavBytes = try {
+				if (discretePath != null) {
+					val f = java.io.File(discretePath)
+					if (f.exists() && f.length() > 0L) f.readBytes() else ex.wavBytes
+				} else ex.wavBytes
+			} catch (_: Exception) {
+				ex.wavBytes
+			}
 			com.bobbypfreely.lpbf.unipack.UnipackWriter.SoundEntry(
 				button = button,
-				soundFileName = ex.fileName,
-				wavBytes = ex.wavBytes,
+				soundFileName = soundName,
+				wavBytes = wavBytes,
 				keyLedFileName = keyLedFileName,
 				keyLedText = keyLedText,
 				loop = clip.loop,
@@ -718,6 +797,20 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		val fileName = safeTitle.replace(Regex("[^A-Za-z0-9 _-]"), "_") + ".zip"
 		return try {
 			val displayPath = saveToDocumentsLpbf(context, fileName) { out ->
+				val apText = resolveAutoPlayForExport()
+				logDebug(
+					"Export autoPlay: " + when {
+						!importedAutoPlayRaw.isNullOrBlank() -> "pass-through raw (${importedAutoPlayRaw!!.length} chars)"
+						!_autoPlayElements.value.isNullOrEmpty() -> "from elements (${_autoPlayElements.value!!.size})"
+						else -> "generated from cut timeline"
+					}
+				)
+				logDebug(
+					"Export keySound: " + if (!importedKeySoundRaw.isNullOrBlank())
+						"pass-through raw (${importedKeySoundRaw!!.length} chars)"
+					else
+						"rebuilt from entries (${entries.size})"
+				)
 				com.bobbypfreely.lpbf.unipack.UnipackWriter.write(
 					output = out,
 					title = safeTitle,
@@ -726,7 +819,8 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 					buttonY = 8,
 					chainCount = chainCount.coerceAtLeast(1),
 					entries = entries,
-					autoPlayTextOverride = importedAutoPlayRaw,
+					autoPlayTextOverride = apText,
+					keySoundTextOverride = importedKeySoundRaw,
 				)
 			} ?: return UnipackExportResult.Failed("Could not create the file in Documents/lpbf")
 			logDebug("Created Unipack '$fileName' -> $displayPath (${entries.size} sounds, $lightshowCount lightshows)")
