@@ -26,6 +26,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 	private lateinit var markOverlay: MarkOverlayView
 	private lateinit var waveformContainer: FrameLayout
 	private lateinit var statusText: TextView
+	private lateinit var waveformTimeText: TextView
 	private lateinit var connectionText: TextView
 	private lateinit var playPauseButton: Button
 	private lateinit var restartButton: Button
@@ -47,12 +48,30 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 
 	private var isUserSeeking = false
 	private val positionPollHandler = android.os.Handler(android.os.Looper.getMainLooper())
+	
+	private fun formatWaveformTime(ms: Int): String {
+		val totalSec = (ms.coerceAtLeast(0)) / 1000
+		val m = totalSec / 60
+		val s = totalSec % 60
+		val frac = ((ms.coerceAtLeast(0)) % 1000) / 100  // tenths
+		return "%d:%02d.%d".format(m, s, frac)
+	}
+
+	private fun updateWaveformTimeLabel(positionMs: Int? = null) {
+		if (!::waveformTimeText.isInitialized) return
+		val pos = positionMs
+			?: (exoController?.currentPositionMs() ?: 0)
+		val totalMs = viewModel.decodedAudio.value?.totalDurationMs ?: 0
+		waveformTimeText.text = "${formatWaveformTime(pos)} / ${formatWaveformTime(totalMs)}"
+	}
+
 	private val positionPollTick = object : Runnable {
 		override fun run() {
 			val controller = exoController
 			if (controller != null && !isUserSeeking) {
 				playbackSeekBar.progress = controller.currentPositionMs()
 			}
+			updateWaveformTimeLabel()
 			positionPollHandler.postDelayed(this, 200L)
 		}
 	}
@@ -80,6 +99,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		markOverlay = view.findViewById(R.id.markOverlay)
 		waveformContainer = view.findViewById(R.id.waveformContainer)
 		statusText = view.findViewById(R.id.statusText)
+		waveformTimeText = view.findViewById(R.id.waveformTimeText)
 		connectionText = view.findViewById(R.id.connectionText)
 		playPauseButton = view.findViewById(R.id.playPauseButton)
 		restartButton = view.findViewById(R.id.restartButton)
@@ -119,6 +139,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			override fun onStopTrackingTouch(seekBar: android.widget.SeekBar) {
 				isUserSeeking = false
 				exoController?.seekTo(seekBar.progress)
+				updateWaveformTimeLabel(seekBar.progress)
 			}
 		})
 		view.findViewById<Button>(R.id.dropMarkButton).setOnClickListener { dropMark() }
@@ -136,6 +157,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				// Force paint after import — setAudioData alone does not always trigger onDraw
 				waveformView.invalidate()
 				statusText.text = "Decoded: ${audio.totalDurationMs}ms. Play, then tap 'Mark Cut Here' to cut."
+				updateWaveformTimeLabel(0)
 				playbackSeekBar.max = audio.totalDurationMs
 				setupPlayer()
 				waveformView.post {
@@ -678,9 +700,24 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			return
 		}
 
+		val pathMap = linkedMapOf<com.bobbypfreely.lpbf.marking.ButtonRef, MutableList<String>>()
+		val soundNames = ArrayList<String>()
+		for ((idx, src) in sources.withIndex()) {
+			val b = src.button
+			if (b != null) pathMap.getOrPut(b) { mutableListOf() }.add(src.filePath)
+			val rel = read.entries.getOrNull(idx)?.soundRelativePath
+				?: java.io.File(src.filePath).name
+			soundNames.add(rel)
+		}
+		val keySoundRaw = try {
+			extractDir.listFiles()?.firstOrNull { it.isFile && it.name.equals("keySound", ignoreCase = true) }?.readText()
+		} catch (_: Exception) { null }
 		val result = com.bobbypfreely.lpbf.audio.MultiClipImporter.buildConcatenatedImport(sources, importDir(context))
 		activity?.runOnUiThread {
 			viewModel.applyMultiClipImport(result)
+			viewModel.setPadSoundPaths(pathMap)
+			viewModel.setImportedSoundNames(soundNames)
+			viewModel.setImportedKeySoundRaw(keySoundRaw)
 			// Drive pad labels + future playback from real performance order when present
 			viewModel.setAutoPlay(
 				read.autoPlay,
