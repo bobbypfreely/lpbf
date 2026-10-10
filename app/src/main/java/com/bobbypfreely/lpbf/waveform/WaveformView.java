@@ -112,7 +112,8 @@ public class WaveformView extends View {
         mPlaybackLinePaint.setAntiAlias(false);
         mPlaybackLinePaint.setColor(res.getColor(R.color.playback_indicator));
         mTimecodePaint = new Paint();
-        mTimecodePaint.setTextSize(12);
+        mTimecodePaint.setTextSize(13);
+        mTimecodePaint.setFakeBoldText(true);
         mTimecodePaint.setAntiAlias(true);
         mTimecodePaint.setColor(res.getColor(R.color.timecode));
         mTimecodePaint.setShadowLayer(2, 1, 1, res.getColor(R.color.timecode_shadow));
@@ -549,35 +550,79 @@ public class WaveformView extends View {
             heights[i] = value * value;
         }
 
-        mNumZoomLevels = 5;
-        mLenByZoomLevel = new int[5];
-        mZoomFactorByZoomLevel = new double[5];
-        mValuesByZoomLevel = new double[5][];
+        // EXTRA_FINE_ZOOM_LEVELS adds deeper zoom-in steps beyond the original 2x max
+        // (4x, 8x...) so a transient/spike can be zoomed into and marked precisely.
+        // These sit at the FRONT of the array (finest at index 0); everything below
+        // index `base` is new, everything from `base` on is the original 5-level scheme,
+        // just shifted -- zoomIn()/zoomOut()/mNumZoomLevels are all already generic
+        // over array length, so nothing outside this method needs to change.
+        final int EXTRA_FINE_ZOOM_LEVELS = 2;
+        final int base = EXTRA_FINE_ZOOM_LEVELS;
 
-        // Level 0 is full resolution, then 2x, 4x, etc compressed
-        mLenByZoomLevel[0] = numFrames;
-        mZoomFactorByZoomLevel[0] = 1.0;
-        mValuesByZoomLevel[0] = heights;
+        mNumZoomLevels = 5 + EXTRA_FINE_ZOOM_LEVELS;
+        mLenByZoomLevel = new int[mNumZoomLevels];
+        mZoomFactorByZoomLevel = new double[mNumZoomLevels];
+        mValuesByZoomLevel = new double[mNumZoomLevels][];
 
-        for (int j = 1; j < 5; j++) {
+        // Original level 0 (2x, doubled+interpolated from "heights") -> now at index `base`
+        mLenByZoomLevel[base] = numFrames * 2;
+        mZoomFactorByZoomLevel[base] = 2.0;
+        mValuesByZoomLevel[base] = new double[mLenByZoomLevel[base]];
+        if (numFrames > 0) {
+            mValuesByZoomLevel[base][0] = 0.5 * heights[0];
+            mValuesByZoomLevel[base][1] = heights[0];
+        }
+        for (int i = 1; i < numFrames; i++) {
+            mValuesByZoomLevel[base][2 * i] = 0.5 * (heights[i - 1] + heights[i]);
+            mValuesByZoomLevel[base][2 * i + 1] = heights[i];
+        }
+
+        // Original level 1 (normal, 1x) -> now at index base + 1
+        mLenByZoomLevel[base + 1] = numFrames;
+        mValuesByZoomLevel[base + 1] = new double[mLenByZoomLevel[base + 1]];
+        mZoomFactorByZoomLevel[base + 1] = 1.0;
+        for (int i = 0; i < mLenByZoomLevel[base + 1]; i++) {
+            mValuesByZoomLevel[base + 1][i] = heights[i];
+        }
+
+        // 3 more levels zoomed OUT, each halved -> now at index base+2 .. base+4
+        for (int j = base + 2; j < mNumZoomLevels; j++) {
             mLenByZoomLevel[j] = mLenByZoomLevel[j - 1] / 2;
-            mZoomFactorByZoomLevel[j] = mZoomFactorByZoomLevel[j - 1] / 2.0;
             mValuesByZoomLevel[j] = new double[mLenByZoomLevel[j]];
+            mZoomFactorByZoomLevel[j] = mZoomFactorByZoomLevel[j - 1] / 2.0;
             for (int i = 0; i < mLenByZoomLevel[j]; i++) {
                 mValuesByZoomLevel[j][i] =
-                    0.5 * (mValuesByZoomLevel[j - 1][i * 2] +
-                           mValuesByZoomLevel[j - 1][i * 2 + 1]);
+                    0.5 * (mValuesByZoomLevel[j - 1][2 * i] +
+                           mValuesByZoomLevel[j - 1][2 * i + 1]);
+            }
+        }
+
+        // EXTRA_FINE_ZOOM_LEVELS levels zoomed further IN than the original max, each
+        // built the same doubling+interpolation way `base` was built from `base + 1`.
+        for (int j = base - 1; j >= 0; j--) {
+            int srcLen = mLenByZoomLevel[j + 1];
+            double[] src = mValuesByZoomLevel[j + 1];
+            mLenByZoomLevel[j] = srcLen * 2;
+            mZoomFactorByZoomLevel[j] = mZoomFactorByZoomLevel[j + 1] * 2.0;
+            mValuesByZoomLevel[j] = new double[mLenByZoomLevel[j]];
+            if (srcLen > 0) {
+                mValuesByZoomLevel[j][0] = 0.5 * src[0];
+                mValuesByZoomLevel[j][1] = src[0];
+            }
+            for (int i = 1; i < srcLen; i++) {
+                mValuesByZoomLevel[j][2 * i] = 0.5 * (src[i - 1] + src[i]);
+                mValuesByZoomLevel[j][2 * i + 1] = src[i];
             }
         }
 
         if (numFrames > 5000) {
-            mZoomLevel = 3;
+            mZoomLevel = base + 3;
         } else if (numFrames > 1000) {
-            mZoomLevel = 2;
+            mZoomLevel = base + 2;
         } else if (numFrames > 300) {
-            mZoomLevel = 1;
+            mZoomLevel = base + 1;
         } else {
-            mZoomLevel = 0;
+            mZoomLevel = base;
         }
 
         mInitialized = true;
