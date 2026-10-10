@@ -77,7 +77,6 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		padSoundPaths.clear()
 		importedSoundNames.clear()
 	}
-		private set
 
 	fun setAutoPlay(
 		presses: List<com.bobbypfreely.lpbf.unipack.AutoPlayPress>,
