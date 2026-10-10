@@ -12,15 +12,7 @@ import kotlin.math.min
 
 /**
  * On-screen Launchpad: 8 top function keys + 8x8 main grid + 8 side chain buttons.
- * Matches hardware layout (MK2 / X / Mini style): top row across columns, right column for chains.
- *
- * Logical pad coords stay Unipad convention: x = row (0 top), y = column (0 left).
- * Chain buttons call [PadInputListener.onChainTouch]; top row calls [onFunctionKeyTouch].
- *
- * Visual:
- *  - Top function keys: full cell size, circular
- *  - Side chain keys: smaller circular pills
- *  - Main pads: rounded corners so black bezel forms a diamond where four pads meet
+ * Top keys circular full-size; side chains smaller circles; pads rounded for black diamonds.
  */
 class VirtualLaunchpadGridView @JvmOverloads constructor(
 	context: Context,
@@ -65,13 +57,9 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 		strokeWidth = 4f
 	}
 
-	/** Gap between main pads — black bezel shows through as diamonds at 4-corners. */
 	private val gapPx = 7f
-	/** Pad corner radius as fraction of cell (higher = more rounded → clearer diamond). */
 	private val padCornerFraction = 0.28f
-	/** Chain button diameter as fraction of cell (smaller than top). */
 	private val chainSizeFraction = 0.55f
-	/** Top function diameter as fraction of cell (near full, no shrink). */
 	private val topSizeFraction = 0.88f
 
 	private var originX = 0f
@@ -150,7 +138,6 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 		val bezel = RectF(originX, originY, originX + cell * 9f, originY + cell * 9f)
 		canvas.drawRoundRect(bezel, 14f, 14f, bezelPaint)
 
-		// Top function keys — circular, full-ish size (no shrink)
 		val topDiameter = cell * topSizeFraction
 		val topRadius = topDiameter / 2f
 		for (f in 0 until 8) {
@@ -164,7 +151,6 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 			canvas.drawText((f + 1).toString(), cx, ty, chainLabelPaint)
 		}
 
-		// Main 8x8 — rounded pads; gaps + radius leave black diamonds between four pads
 		val padCorner = cell * padCornerFraction
 		val litPaint = Paint().apply { isAntiAlias = true }
 		for (lx in 0 until gridHeight) {
@@ -176,14 +162,12 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 				val right = mainLeft + (screenCol + 1) * cell - gapPx / 2
 				val bottom = mainTop + (screenRow + 1) * cell - gapPx / 2
 				val rect = RectF(left, top, right, bottom)
-
 				val paint = when {
 					pressedPad == lx to ly -> cellPaintPressed
 					litPads.containsKey(lx to ly) -> litPaint.apply { color = litPads[lx to ly]!! }
 					else -> cellPaintOff
 				}
 				canvas.drawRoundRect(rect, padCorner, padCorner, paint)
-
 				highlightedPads[lx to ly]?.let { hc ->
 					highlightPaint.color = hc
 					val inset = highlightPaint.strokeWidth / 2
@@ -192,7 +176,6 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 						padCorner, padCorner, highlightPaint
 					)
 				}
-
 				padLabels[lx to ly]?.let { label ->
 					labelPaint.textSize = cell * 0.32f
 					val textY = rect.centerY() - (labelPaint.descent() + labelPaint.ascent()) / 2
@@ -201,7 +184,6 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 			}
 		}
 
-		// Side chain buttons — smaller circles, centered in side cells
 		val chainDiameter = cell * chainSizeFraction
 		val chainRadius = chainDiameter / 2f
 		for (c in 0 until 8) {
@@ -222,7 +204,6 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 		layoutGeometry()
 		val x = event.x
 		val y = event.y
-
 		when (event.action) {
 			MotionEvent.ACTION_DOWN -> {
 				if (y >= originY && y < originY + topStrip && x >= mainLeft && x < mainLeft + 8 * cell) {
