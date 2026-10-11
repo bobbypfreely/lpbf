@@ -57,7 +57,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		logDebug("Pad sound files: ${map.values.sumOf { it.size }} path(s) on ${map.size} pad(s)")
 	}
 
-	fun setImportedKeySoundRaw(text: String?) {
+	fun storeImportedKeySoundRaw(text: String?) {
 		importedKeySoundRaw = text?.takeIf { it.isNotBlank() }
 		if (importedKeySoundRaw != null) logDebug("keySound raw preserved for export (${importedKeySoundRaw!!.length} chars)")
 	}
