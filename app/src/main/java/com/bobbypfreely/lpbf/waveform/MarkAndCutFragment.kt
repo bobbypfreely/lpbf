@@ -717,7 +717,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			viewModel.applyMultiClipImport(result)
 			viewModel.setPadSoundPaths(pathMap)
 			viewModel.setImportedSoundNames(soundNames)
-			viewModel.setImportedKeySoundRaw(keySoundRaw)
+			viewModel.storeImportedKeySoundRaw(keySoundRaw)
 			// Drive pad labels + future playback from real performance order when present
 			viewModel.setAutoPlay(
 				read.autoPlay,
