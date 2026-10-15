@@ -446,7 +446,6 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	/** Remove one cut from pad (LIFO). Returns true if something was unmapped. */
 	fun unmapOneOnPad(x: Int, y: Int): Boolean {
 		val session = _markingSession.value ?: return false
-		if (session.isSpliced) return false
 		val button = ButtonRef(_currentChain.value ?: 0, x, y)
 		val onPad = session.segments().withIndex().filter { it.value.button == button }
 		if (onPad.isEmpty()) return false
@@ -460,7 +459,6 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	/** Clear every cut on this pad (cuts stay in the session, just unmapped). */
 	fun unmapAllOnPad(x: Int, y: Int): Int {
 		val session = _markingSession.value ?: return 0
-		if (session.isSpliced) return 0
 		val button = ButtonRef(_currentChain.value ?: 0, x, y)
 		var n = 0
 		session.segments().withIndex().filter { it.value.button == button }.forEach { (i, _) ->
@@ -477,7 +475,6 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	/** Move all cuts from [from] onto [to] (appends to any existing stack). */
 	fun movePadStack(from: ButtonRef, to: ButtonRef): Int {
 		val session = _markingSession.value ?: return 0
-		if (session.isSpliced) return 0
 		var n = 0
 		session.segments().withIndex().filter { it.value.button == from }.forEach { (i, _) ->
 			session.reassignButton(i, to)
@@ -489,7 +486,6 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	/** Re-point a specific cut index (0-based) onto a pad. */
 	fun reassignCutToPad(segmentIndex: Int, x: Int, y: Int) {
 		val session = _markingSession.value ?: return
-		if (session.isSpliced) return
 		if (segmentIndex !in 0 until session.segmentCount) return
 		val button = ButtonRef(_currentChain.value ?: 0, x, y)
 		session.reassignButton(segmentIndex, button)
@@ -501,10 +497,17 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	fun applyPatternShortcut(pattern: com.bobbypfreely.lpbf.lightshow.Pattern, segmentIndex: Int? = null) {
 		val session = _markingSession.value ?: return
 		val index = segmentIndex ?: _selectedLightshowSegment.value ?: return
-		if (index !in 0 until session.segmentCount) return
-		session.assignPattern(index, pattern)
-		notifySegmentsChanged()
-		logDebug("Pattern '${pattern.name}' -> cut ${index + 1}")
+		if (index !in 0 until session.segmentCount) {
+			logDebug("Preset '${pattern.name}': bad cut index $index")
+			return
+		}
+		try {
+			session.assignPattern(index, pattern)
+			notifySegmentsChanged()
+			logDebug("Pattern '${pattern.name}' -> cut ${index + 1}")
+		} catch (e: Exception) {
+			logDebug("Preset failed: ${e.message}")
+		}
 	}
 
 
