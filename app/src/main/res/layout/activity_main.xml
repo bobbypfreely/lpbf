@@ -12,10 +12,10 @@
 		android:layout_width="match_parent"
 		android:layout_height="match_parent"
 		android:layout_gravity="center"
-		android:layout_marginStart="12dp"
-		android:layout_marginEnd="12dp"
-		android:layout_marginTop="8dp"
-		android:layout_marginBottom="12dp"
+		android:layout_marginStart="8dp"
+		android:layout_marginEnd="8dp"
+		android:layout_marginTop="4dp"
+		android:layout_marginBottom="8dp"
 		android:padding="4dp">
 
 		<LinearLayout
@@ -215,6 +215,49 @@
 			<TextView android:id="@+id/btnCloseBottom" android:layout_width="40dp" android:layout_height="40dp" android:gravity="center" android:text="X" android:textColor="#CCCCDD" android:textSize="16sp" android:textStyle="bold" android:background="?attr/selectableItemBackgroundBorderless" android:clickable="true" android:focusable="true" />
 		</LinearLayout>
 		<FrameLayout android:id="@+id/waveformPlaceholder" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:background="#0F0F1A" />
+	</LinearLayout>
+
+
+	<!-- Presets strip: shown when KeyLED / LIGHTS is open (right of centered grid). -->
+	<LinearLayout
+		android:id="@+id/presetsPanel"
+		android:layout_width="132dp"
+		android:layout_height="match_parent"
+		android:layout_gravity="end"
+		android:orientation="vertical"
+		android:background="#101018"
+		android:elevation="12dp"
+		android:visibility="gone"
+		android:padding="6dp"
+		android:clickable="true"
+		android:focusable="true">
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="PRESETS"
+			android:textColor="#B39DDB"
+			android:textSize="12sp"
+			android:textStyle="bold"
+			android:letterSpacing="0.08"
+			android:paddingBottom="4dp" />
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Tap a cut first"
+			android:textColor="#666688"
+			android:textSize="10sp"
+			android:paddingBottom="4dp" />
+		<ScrollView
+			android:layout_width="match_parent"
+			android:layout_height="0dp"
+			android:layout_weight="1"
+			android:fillViewport="true">
+			<LinearLayout
+				android:id="@+id/presetsList"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:orientation="vertical" />
+		</ScrollView>
 	</LinearLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
