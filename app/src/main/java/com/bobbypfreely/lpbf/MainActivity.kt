@@ -30,6 +30,8 @@ class MainActivity : AppCompatActivity() {
 
 	private lateinit var viewModel: ProjectViewModel
 	private lateinit var centerPadContainer: FrameLayout
+	private lateinit var presetsPanel: LinearLayout
+	private lateinit var presetsList: LinearLayout
 	private lateinit var leftDrawer: LinearLayout
 	private lateinit var rightDrawer: LinearLayout
 	private lateinit var bottomDrawer: LinearLayout
@@ -43,6 +45,7 @@ class MainActivity : AppCompatActivity() {
 	private val baseSideMarginDp = 12
 	private val baseBottomMarginDp = 12
 	private val drawerWidthDp = 240
+	private val presetsWidthDp = 132
 	private val bottomDrawerHeightDp = 480
 	private val soundLines = mutableListOf<String>()
 	private val ledLines = mutableListOf<String>()
@@ -74,6 +77,8 @@ class MainActivity : AppCompatActivity() {
 			override fun onDisconnected() { viewModel.setConnectedDeviceName(null) }
 		}
 		centerPadContainer = findViewById(R.id.centerPadContainer)
+		presetsPanel = findViewById(R.id.presetsPanel)
+		presetsList = findViewById(R.id.presetsList)
 		leftDrawer = findViewById(R.id.leftDrawer)
 		rightDrawer = findViewById(R.id.rightDrawer)
 		bottomDrawer = findViewById(R.id.bottomDrawer)
@@ -93,6 +98,24 @@ class MainActivity : AppCompatActivity() {
 		}
 		viewModel.isPlaceTabActive = true
 		viewModel.enterUiMode(ProjectViewModel.UiMode.PLAY)
+
+		// New track/import: drop all pad ExoPlayers so the previous song does not stay in RAM.
+		viewModel.trackGeneration.observe(this) { gen ->
+			if (gen == null || gen <= 0) return@observe
+			if (!::harness.isInitialized) return@observe
+			try {
+				harness.release()
+				harness = com.bobbypfreely.lpbf.harness.LpbfHarness.assemble(
+					context = this, grid = { launchpadGrid },
+					isLightsAuthoring = { viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS },
+					onLightsBusy = { busy -> lightsPlaying = busy; if (!busy) refreshSideLists() },
+				)
+				viewModel.cachedFilePath?.let { harness.setSource(it) }
+				viewModel.logDebug("Harness reset for track gen $gen")
+			} catch (e: Exception) {
+				android.util.Log.e("MainActivity", "Harness reset failed", e)
+			}
+		}
 
 		findViewById<View?>(R.id.btnCloseLeft)?.setOnClickListener { if (leftOpen) setLeftOpen(false) }
 		findViewById<View?>(R.id.btnCloseRight)?.setOnClickListener { if (rightOpen) setRightOpen(false) }
@@ -164,6 +187,7 @@ class MainActivity : AppCompatActivity() {
 			applyUiMode(mode)
 			showTipForMode(mode)
 			viewModel.autosave(applicationContext)
+			updateCenterInsets()
 		}
 		updateCenterInsets(); updateModeChrome()
 	}
@@ -587,11 +611,70 @@ class MainActivity : AppCompatActivity() {
 
 	private fun updateCenterInsets() {
 		val density = resources.displayMetrics.density
+		val showPresets = leftOpen && viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS
+		if (::presetsPanel.isInitialized) {
+			presetsPanel.visibility = if (showPresets) View.VISIBLE else View.GONE
+			if (showPresets) ensurePresetsFilled()
+		}
 		val left = if (leftOpen) (drawerWidthDp * density).toInt() else (baseSideMarginDp * density).toInt()
-		val right = if (rightOpen) (drawerWidthDp * density).toInt() else (baseSideMarginDp * density).toInt()
+		val right = when {
+			rightOpen -> (drawerWidthDp * density).toInt()
+			showPresets -> (presetsWidthDp * density).toInt()
+			else -> (baseSideMarginDp * density).toInt()
+		}
 		val bottom = if (bottomOpen) (bottomDrawerHeightDp * density).toInt() else (baseBottomMarginDp * density).toInt()
 		val lp = centerPadContainer.layoutParams as ViewGroup.MarginLayoutParams
-		lp.leftMargin = left; lp.rightMargin = right; lp.bottomMargin = bottom; lp.topMargin = (8 * density).toInt()
-		centerPadContainer.layoutParams = lp; centerPadContainer.requestLayout(); launchpadGrid.requestLayout()
+		// Symmetric top; grid centers in the remaining band between left drawer and presets/right.
+		lp.leftMargin = left
+		lp.rightMargin = right
+		lp.bottomMargin = bottom
+		lp.topMargin = (4 * density).toInt()
+		centerPadContainer.layoutParams = lp
+		centerPadContainer.requestLayout()
+		launchpadGrid.requestLayout()
+	}
+
+	private var presetsFilled = false
+
+	private fun ensurePresetsFilled() {
+		if (!::presetsList.isInitialized) return
+		if (presetsFilled && presetsList.childCount > 0) return
+		presetsList.removeAllViews()
+		val patterns = try {
+			com.bobbypfreely.lpbf.lightshow.PatternShortcutStore.allAvailable(this)
+		} catch (_: Exception) {
+			com.bobbypfreely.lpbf.lightshow.BuiltInPatterns.all()
+		}
+		val density = resources.displayMetrics.density
+		for (pattern in patterns) {
+			val btn = TextView(this).apply {
+				text = pattern.name
+				setTextColor(0xFFE0E0F0.toInt())
+				textSize = 11f
+				gravity = android.view.Gravity.CENTER
+				setPadding((6 * density).toInt(), (8 * density).toInt(), (6 * density).toInt(), (8 * density).toInt())
+				setBackgroundColor(0xFF1A1A28.toInt())
+				val lp = LinearLayout.LayoutParams(
+					LinearLayout.LayoutParams.MATCH_PARENT,
+					LinearLayout.LayoutParams.WRAP_CONTENT,
+				)
+				lp.bottomMargin = (4 * density).toInt()
+				layoutParams = lp
+				isClickable = true
+				isFocusable = true
+				setOnClickListener {
+					val sel = viewModel.selectedLightshowSegment.value
+					if (sel == null) {
+						viewModel.logDebug("Preset '${pattern.name}': select a cut on the grid first")
+						return@setOnClickListener
+					}
+					viewModel.applyPatternShortcut(pattern, sel)
+					viewModel.logDebug("Applied preset '${pattern.name}' to cut ${sel + 1}")
+				}
+			}
+			presetsList.addView(btn)
+		}
+		presetsFilled = true
+		viewModel.logDebug("Presets panel: ${patterns.size} shortcuts")
 	}
 }
