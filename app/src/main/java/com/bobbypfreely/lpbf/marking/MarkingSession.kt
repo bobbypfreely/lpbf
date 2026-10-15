@@ -186,28 +186,26 @@ class MarkingSession(private val trackDurationMs: Int) {
 	}
 
 	fun reassignButton(segmentIndex: Int, button: ButtonRef?) {
-		checkNotSpliced()
+		// Mapping stays editable after export (splice no longer locks).
 		require(segmentIndex in segmentButtons.indices) { "Segment index $segmentIndex is out of range" }
 		pushUndoSnapshot()
 		segmentButtons[segmentIndex] = button
 	}
 
 	fun assignPattern(segmentIndex: Int, pattern: Pattern?) {
-		checkNotSpliced()
+		// Lightshow presets must work any time a cut exists.
 		require(segmentIndex in segmentPatterns.indices) { "Segment index $segmentIndex is out of range" }
 		pushUndoSnapshot()
 		segmentPatterns[segmentIndex] = pattern
 	}
 
 	fun setLoop(segmentIndex: Int, loop: Int) {
-		checkNotSpliced()
 		require(segmentIndex in segmentLoops.indices) { "Segment index $segmentIndex is out of range" }
 		pushUndoSnapshot()
 		segmentLoops[segmentIndex] = loop
 	}
 
 	fun setWormhole(segmentIndex: Int, wormhole: Int) {
-		checkNotSpliced()
 		require(segmentIndex in segmentWormholes.indices) { "Segment index $segmentIndex is out of range" }
 		pushUndoSnapshot()
 		segmentWormholes[segmentIndex] = wormhole
@@ -261,11 +259,15 @@ class MarkingSession(private val trackDurationMs: Int) {
 		data class Blocked(val overCapSegmentIndices: List<Int>) : SpliceResult()
 	}
 
-	fun splice(): SpliceResult {
-		checkNotSpliced()
-		// Length limit removed — UniPad may still limit playback of very long WAVs.
-		isSpliced = true
-		val clips = segments().mapIndexed { i, seg ->
+	/**
+	 * Snapshot cuts for export. Does **not** lock the session — composer stays editable
+	 * (presets, remap, marks) after export.
+	 */
+	fun splice(): SpliceResult = SpliceResult.Success(buildClips())
+
+	/** Same snapshot without the SpliceResult wrapper. */
+	fun buildClips(): List<CommittedClip> =
+		segments().mapIndexed { i, seg ->
 			CommittedClip(
 				index = i + 1,
 				startMs = seg.startMs,
@@ -276,8 +278,6 @@ class MarkingSession(private val trackDurationMs: Int) {
 				wormhole = seg.wormhole,
 			)
 		}
-		return SpliceResult.Success(clips)
-	}
 
 	private fun checkNotSpliced() {
 		check(!isSpliced) { "Session already spliced -- marks are locked" }
