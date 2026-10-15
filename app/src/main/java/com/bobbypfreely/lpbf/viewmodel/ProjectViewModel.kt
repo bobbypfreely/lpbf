@@ -184,6 +184,14 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	private val _segmentVersion = MutableLiveData(0)
 	val segmentVersion: LiveData<Int> = _segmentVersion
 
+	/** Bumps when a new track/import replaces the previous — MainActivity releases audio voices. */
+	private val _trackGeneration = MutableLiveData(0)
+	val trackGeneration: LiveData<Int> = _trackGeneration
+
+	private fun bumpTrackGeneration() {
+		_trackGeneration.value = (_trackGeneration.value ?: 0) + 1
+	}
+
 	private val debugLogBuilder = StringBuilder()
 	private val _debugLog = MutableLiveData<String>()
 	val debugLog: LiveData<String> = _debugLog
@@ -208,6 +216,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		importedKeySoundRaw = null
 		importedSoundNames.clear()
 		padSoundPaths.clear()
+		bumpTrackGeneration()
 		notifySegmentsChanged()
 	}
 
@@ -265,6 +274,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 				isLightshowTabActive = false
 				isPlaceTabActive = true
 				deselectLightshowSegment()
+				remapSource = null
 				setPlaceMode(PlaceMode.PLAY)
 			}
 			UiMode.EDIT -> {
@@ -332,6 +342,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		when (_placeMode.value) {
 			PlaceMode.PLAY -> previewPad(x, y)
 			PlaceMode.HYBRID -> assignAndPreview(x, y)
+			PlaceMode.EDIT -> editPad(x, y)
 			else -> assignNextSegment(x, y)
 		}
 	}
@@ -368,6 +379,134 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		logDebug("Assigned cut ${nextIndex + 1} -> chain $chain pad ($x,$y) [stack=$stack]")
 		notifySegmentsChanged()
 	}
+
+
+	/**
+	 * EDIT mode pad hit:
+	 *  - If [remapSource] is set: move that pad's entire stack onto this pad.
+	 *  - Else if this pad has mappings: unmap one cut (LIFO) — cut becomes free again.
+	 *  - Else: assign next unmapped cut here.
+	 */
+	private fun editPad(x: Int, y: Int) {
+		val session = _markingSession.value ?: return
+		if (session.isSpliced) return
+		val chain = _currentChain.value ?: 0
+		val button = ButtonRef(chain = chain, x = x, y = y)
+
+		val source = remapSource
+		if (source != null) {
+			if (source == button) {
+				remapSource = null
+				logDebug("Remap cancelled (same pad)")
+				notifySegmentsChanged()
+				return
+			}
+			val moved = movePadStack(source, button)
+			remapSource = null
+			logDebug("Moved $moved cut(s) from (${source.x},${source.y}) -> ($x,$y)")
+			notifySegmentsChanged()
+			return
+		}
+
+		val onPad = session.segments().withIndex().filter { it.value.button == button }
+		if (onPad.isNotEmpty()) {
+			// LIFO unmap
+			val (segIndex, _) = onPad.last()
+			session.reassignButton(segIndex, null)
+			logDebug("Unmapped cut ${segIndex + 1} from pad ($x,$y) — ${onPad.size - 1} left on pad")
+			notifySegmentsChanged()
+			return
+		}
+		assignNextSegment(x, y)
+	}
+
+	/** Pad whose stack will move on the next EDIT tap (null = normal unmap/assign). */
+	var remapSource: ButtonRef? = null
+		private set
+
+	/** Arm remap: next EDIT pad tap receives this pad's full stack. Tap same pad to cancel. */
+	fun beginRemapFromPad(x: Int, y: Int) {
+		val chain = _currentChain.value ?: 0
+		val button = ButtonRef(chain, x, y)
+		val session = _markingSession.value ?: return
+		val count = session.segments().count { it.button == button }
+		if (count == 0) {
+			logDebug("Remap: pad ($x,$y) is empty")
+			remapSource = null
+			return
+		}
+		remapSource = button
+		logDebug("Remap armed: ($x,$y) [$count cut(s)] — tap destination pad")
+	}
+
+	fun cancelRemap() {
+		remapSource = null
+	}
+
+	/** Remove one cut from pad (LIFO). Returns true if something was unmapped. */
+	fun unmapOneOnPad(x: Int, y: Int): Boolean {
+		val session = _markingSession.value ?: return false
+		if (session.isSpliced) return false
+		val button = ButtonRef(_currentChain.value ?: 0, x, y)
+		val onPad = session.segments().withIndex().filter { it.value.button == button }
+		if (onPad.isEmpty()) return false
+		val (segIndex, _) = onPad.last()
+		session.reassignButton(segIndex, null)
+		notifySegmentsChanged()
+		logDebug("Unmapped cut ${segIndex + 1} from ($x,$y)")
+		return true
+	}
+
+	/** Clear every cut on this pad (cuts stay in the session, just unmapped). */
+	fun unmapAllOnPad(x: Int, y: Int): Int {
+		val session = _markingSession.value ?: return 0
+		if (session.isSpliced) return 0
+		val button = ButtonRef(_currentChain.value ?: 0, x, y)
+		var n = 0
+		session.segments().withIndex().filter { it.value.button == button }.forEach { (i, _) ->
+			session.reassignButton(i, null)
+			n++
+		}
+		if (n > 0) {
+			notifySegmentsChanged()
+			logDebug("Unmapped $n cut(s) from ($x,$y)")
+		}
+		return n
+	}
+
+	/** Move all cuts from [from] onto [to] (appends to any existing stack). */
+	fun movePadStack(from: ButtonRef, to: ButtonRef): Int {
+		val session = _markingSession.value ?: return 0
+		if (session.isSpliced) return 0
+		var n = 0
+		session.segments().withIndex().filter { it.value.button == from }.forEach { (i, _) ->
+			session.reassignButton(i, to)
+			n++
+		}
+		return n
+	}
+
+	/** Re-point a specific cut index (0-based) onto a pad. */
+	fun reassignCutToPad(segmentIndex: Int, x: Int, y: Int) {
+		val session = _markingSession.value ?: return
+		if (session.isSpliced) return
+		if (segmentIndex !in 0 until session.segmentCount) return
+		val button = ButtonRef(_currentChain.value ?: 0, x, y)
+		session.reassignButton(segmentIndex, button)
+		notifySegmentsChanged()
+		logDebug("Cut ${segmentIndex + 1} -> pad ($x,$y)")
+	}
+
+	/** Apply a named pattern shortcut to the selected lightshow segment (or [segmentIndex]). */
+	fun applyPatternShortcut(pattern: com.bobbypfreely.lpbf.lightshow.Pattern, segmentIndex: Int? = null) {
+		val session = _markingSession.value ?: return
+		val index = segmentIndex ?: _selectedLightshowSegment.value ?: return
+		if (index !in 0 until session.segmentCount) return
+		session.assignPattern(index, pattern)
+		notifySegmentsChanged()
+		logDebug("Pattern '${pattern.name}' -> cut ${index + 1}")
+	}
+
 
 	private fun assignAndPreview(x: Int, y: Int) {
 		val session = _markingSession.value ?: return
@@ -429,6 +568,22 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		_selectedLightshowSegment.value = segIndex
 		logDebug("Lightshow pad ($x,$y): editing cut ${segIndex + 1} (note ${cycle + 1}/${matches.size})")
 	}
+
+	fun listPatternShortcuts(context: android.content.Context): List<com.bobbypfreely.lpbf.lightshow.Pattern> =
+		com.bobbypfreely.lpbf.lightshow.PatternShortcutStore.allAvailable(context)
+
+	fun saveCurrentPatternAsShortcut(context: android.content.Context, name: String): Boolean {
+		val session = _markingSession.value ?: return false
+		val index = _selectedLightshowSegment.value ?: return false
+		val pattern = session.segment(index).lightPattern ?: return false
+		val named = pattern.copy(name = name.trim().ifBlank { pattern.name })
+		val ok = com.bobbypfreely.lpbf.lightshow.PatternShortcutStore.save(context, named)
+		if (ok) logDebug("Saved shortcut '${named.name}'")
+		return ok
+	}
+
+	fun deletePatternShortcut(context: android.content.Context, name: String): Boolean =
+		com.bobbypfreely.lpbf.lightshow.PatternShortcutStore.delete(context, name)
 
 	fun deselectLightshowSegment() {
 		_selectedLightshowSegment.value = null
@@ -520,6 +675,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		importedKeySoundRaw = null
 		importedSoundNames.clear()
 		padSoundPaths.clear()
+		bumpTrackGeneration()
 		_markingSession.value = MarkingSession.restore(
 			result.decodedAudio.totalDurationMs,
 			result.marks,
