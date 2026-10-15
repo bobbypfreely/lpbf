@@ -27,7 +27,12 @@ import com.bobbypfreely.lpbf.lightshow.Pattern
 class MarkingSession(private val trackDurationMs: Int) {
 
 	companion object {
-		const val MAX_SEGMENT_MS = 8000
+		/**
+		 * No hard composer cap. UniPad devices may still choke on very long samples
+		 * (classic SoundPool ~6s); export still works. Kept as a huge sentinel so
+		 * old ExceedsCap call sites compile but never trip in normal use.
+		 */
+		const val MAX_SEGMENT_MS = Int.MAX_VALUE / 4
 
 		/** Rebuilds a session from previously-saved marks/buttons/patterns (project resume
 		 * or Unipack import). Bypasses recordMark()'s live-input validation since this
@@ -127,10 +132,6 @@ class MarkingSession(private val trackDurationMs: Int) {
 			return RecordResult.ExceedsCap(0, MAX_SEGMENT_MS)
 		}
 		val clamped = atMs.coerceIn(prev + 1, trackDurationMs)
-		val gap = clamped - prev
-		if (gap > MAX_SEGMENT_MS) {
-			return RecordResult.ExceedsCap(gap, MAX_SEGMENT_MS)
-		}
 		return commitMark(clamped, button, loop, wormhole)
 	}
 
@@ -262,10 +263,7 @@ class MarkingSession(private val trackDurationMs: Int) {
 
 	fun splice(): SpliceResult {
 		checkNotSpliced()
-		val overCap = segments().withIndex().filter { it.value.durationMs > MAX_SEGMENT_MS }.map { it.index }
-		if (overCap.isNotEmpty()) {
-			return SpliceResult.Blocked(overCap)
-		}
+		// Length limit removed — UniPad may still limit playback of very long WAVs.
 		isSpliced = true
 		val clips = segments().mapIndexed { i, seg ->
 			CommittedClip(
