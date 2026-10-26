@@ -1,11 +1,13 @@
 package com.bobbypfreely.lpbf.ui
 
+import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.Fragment
@@ -21,10 +23,11 @@ import com.bobbypfreely.lpbf.midi.MidiConnection
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
 
 /**
- * Lightshow authoring UI hosted in the LED drawer.
- * Pad interaction and LED paint use the **main** VirtualLaunchpadGridView in MainActivity.
- * Presets applied from the right strip force-reload into [events] so color/time stay editable
- * without backing out.
+ * Lightshow authoring in the LED drawer.
+ * - No bottom time/velocity strip — edit happens in the Events list.
+ * - Tap an event to select its time group; pick a color → prompt to set velocity
+ *   for all pads on at that same start time (not the whole clip).
+ * - Long-press an event to remove it. Tap main grid to place at selected time.
  */
 class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
@@ -34,16 +37,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 	private lateinit var rowLabel: TextView
 	private lateinit var buttonRow: LinearLayout
 	private lateinit var editControls: LinearLayout
-	private lateinit var velocityText: TextView
-	private lateinit var timeText: TextView
-	private lateinit var timeMinus1000: Button
-	private lateinit var timeMinus100: Button
-	private lateinit var timeMinus10: Button
-	private lateinit var timeMinus1: Button
-	private lateinit var timePlus1: Button
-	private lateinit var timePlus10: Button
-	private lateinit var timePlus100: Button
-	private lateinit var timePlus1000: Button
 	private lateinit var eventListContainer: LinearLayout
 	private lateinit var grid: VirtualLaunchpadGridView
 
@@ -54,10 +47,17 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
 	private var audioPreview: AudioPlaybackController? = null
 
-	private data class EditEvent(val x: Int, val y: Int, val velocity: Int, val startMs: Int, val durationMs: Int)
+	private data class EditEvent(
+		val x: Int,
+		val y: Int,
+		var velocity: Int,
+		var startMs: Int,
+		var durationMs: Int,
+	)
 
 	private val events = mutableListOf<EditEvent>()
-	private var authoringTimeMs = 0
+	/** Selected simultaneous group = events sharing this startMs. */
+	private var selectedStartMs: Int? = null
 	private var loadedForSegment: Int? = null
 
 	private fun paintGrid(): VirtualLaunchpadGridView {
@@ -72,34 +72,14 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		rowLabel = view.findViewById(R.id.lightshowRowLabel)
 		buttonRow = view.findViewById(R.id.lightshowButtonRow)
 		editControls = view.findViewById(R.id.lightshowEditControls)
-		velocityText = view.findViewById(R.id.lightshowVelocityText)
-		timeText = view.findViewById(R.id.lightshowTimeText)
-		timeMinus1000 = view.findViewById(R.id.lightshowTimeMinus1000)
-		timeMinus100 = view.findViewById(R.id.lightshowTimeMinus100)
-		timeMinus10 = view.findViewById(R.id.lightshowTimeMinus10)
-		timeMinus1 = view.findViewById(R.id.lightshowTimeMinus1)
-		timePlus1 = view.findViewById(R.id.lightshowTimePlus1)
-		timePlus10 = view.findViewById(R.id.lightshowTimePlus10)
-		timePlus100 = view.findViewById(R.id.lightshowTimePlus100)
-		timePlus1000 = view.findViewById(R.id.lightshowTimePlus1000)
 		eventListContainer = view.findViewById(R.id.lightshowEventListContainer)
 		grid = view.findViewById(R.id.lightshowGrid)
 
 		buildHardwareButtonRow()
 
-		timeMinus1000.setOnClickListener { adjustTime(-1000) }
-		timeMinus100.setOnClickListener { adjustTime(-100) }
-		timeMinus10.setOnClickListener { adjustTime(-10) }
-		timeMinus1.setOnClickListener { adjustTime(-1) }
-		timePlus1.setOnClickListener { adjustTime(+1) }
-		timePlus10.setOnClickListener { adjustTime(+10) }
-		timePlus100.setOnClickListener { adjustTime(+100) }
-		timePlus1000.setOnClickListener { adjustTime(+1000) }
-		view.findViewById<Button>(R.id.lightshowVelocityMinus).setOnClickListener { viewModel.nudgeVelocity(-1) }
-		view.findViewById<Button>(R.id.lightshowVelocityPlus).setOnClickListener { viewModel.nudgeVelocity(+1) }
 		view.findViewById<Button>(R.id.lightshowPlay).setOnClickListener { playPreview() }
 		view.findViewById<Button>(R.id.lightshowStop).setOnClickListener { stopPreview() }
-		view.findViewById<Button>(R.id.lightshowSave).setOnClickListener { saveAndDeselect() }
+		view.findViewById<Button>(R.id.lightshowSave).setOnClickListener { savePattern(staySelected = true) }
 		view.findViewById<Button>(R.id.lightshowBack).setOnClickListener {
 			stopPreview()
 			viewModel.deselectLightshowSegment()
@@ -107,12 +87,9 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
 		viewModel.selectedLightshowSegment.observe(viewLifecycleOwner) { onSelectionChanged(it) }
 		viewModel.currentChain.observe(viewLifecycleOwner) { refresh() }
-		viewModel.colorHueSlot.observe(viewLifecycleOwner) { refreshHardwareButtonHighlight(); refreshVelocityText() }
-		viewModel.colorSaturationLevel.observe(viewLifecycleOwner) { refreshVelocityText() }
-		viewModel.colorVelocityOverride.observe(viewLifecycleOwner) { refreshVelocityText() }
+		viewModel.colorHueSlot.observe(viewLifecycleOwner) { refreshHardwareButtonHighlight() }
 		viewModel.segmentVersion.observe(viewLifecycleOwner) { refresh() }
 		viewModel.markingSession.observe(viewLifecycleOwner) { refresh() }
-		// Preset applied while still editing this cut — force reload events from pattern
 		viewModel.lightshowEditorEpoch.observe(viewLifecycleOwner) {
 			val sel = viewModel.selectedLightshowSegment.value
 			if (sel != null) {
@@ -148,13 +125,16 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		for (slot in 0 until 8) {
 			val button = Button(requireContext()).apply {
 				textSize = 10f
-				layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+				layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
 					marginEnd = if (slot < 7) 2 else 0
+					height = (36 * resources.displayMetrics.density).toInt()
 				}
-				setPadding(0, 6, 0, 6)
+				setPadding(0, 4, 0, 4)
 				setOnClickListener {
 					if (viewModel.selectedLightshowSegment.value != null) {
 						viewModel.setColorHueSlot(slot)
+						val vel = viewModel.currentColorVelocity()
+						promptApplyVelocityToTimeGroup(vel)
 					} else {
 						viewModel.setCurrentChain(slot)
 					}
@@ -163,6 +143,37 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 			buttonRow.addView(button)
 			hardwareButtons.add(button)
 		}
+	}
+
+	/**
+	 * Apply [velocity] to every event that starts at the selected time
+	 * (pads lighting together). Never rewrites the whole clip.
+	 */
+	private fun promptApplyVelocityToTimeGroup(velocity: Int) {
+		val groupMs = selectedStartMs
+		if (groupMs == null) {
+			viewModel.logDebug("Pick an event first, then a color — velocity applies to that time only")
+			statusText.text = "Tap an event, then a color to recolor that moment."
+			return
+		}
+		val group = events.filter { it.startMs == groupMs }
+		if (group.isEmpty()) return
+
+		val padList = group.joinToString(", ") { "(${it.x + 1},${it.y + 1})" }
+		AlertDialog.Builder(requireContext())
+			.setTitle("Velocity $velocity @ ${groupMs}ms")
+			.setMessage(
+				"Apply velocity $velocity to all ${group.size} pad(s) lighting at ${groupMs}ms?\n\n$padList\n\n" +
+					"(Only this moment — not the whole clip.)",
+			)
+			.setPositiveButton("Apply") { _, _ ->
+				group.forEach { it.velocity = velocity.coerceIn(1, 127) }
+				savePattern(staySelected = true)
+				refresh()
+				viewModel.logDebug("Velocity $velocity set on ${group.size} pad(s) at ${groupMs}ms")
+			}
+			.setNegativeButton("Cancel", null)
+			.show()
 	}
 
 	private fun refreshHardwareButtonHighlight() {
@@ -183,17 +194,14 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		}
 	}
 
-	private fun refreshVelocityText() {
-		velocityText.text = "Velocity: ${viewModel.currentColorVelocity()}"
-	}
-
 	private fun onSelectionChanged(segmentIndex: Int?) {
 		editControls.visibility = if (segmentIndex != null) View.VISIBLE else View.GONE
-		rowLabel.text = if (segmentIndex != null) "Color:" else "Chain:"
+		rowLabel.text = if (segmentIndex != null) "Color (applies to selected time):" else "Chain:"
 
 		if (segmentIndex == null) {
 			loadedForSegment = null
 			events.clear()
+			selectedStartMs = null
 			stopPreview()
 			refresh()
 			return
@@ -202,12 +210,13 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		if (loadedForSegment != segmentIndex) {
 			loadedForSegment = segmentIndex
 			events.clear()
-			authoringTimeMs = 0
+			selectedStartMs = null
 			val session = viewModel.markingSession.value
 			val segment = session?.segment(segmentIndex)
 			val pattern = segment?.lightPattern
 			if (pattern != null && segment.durationMs > 0) {
 				events.addAll(reconstructEvents(pattern, segment.durationMs))
+				selectedStartMs = events.firstOrNull()?.startMs
 			}
 		}
 		refresh()
@@ -220,29 +229,93 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		sorted.forEachIndexed { i, kf ->
 			if (!kf.on || used[i]) return@forEachIndexed
 			val offIndex = sorted.indexOfFirst { o -> !o.on && o.x == kf.x && o.y == kf.y && o.t >= kf.t }
-			val offT = if (offIndex >= 0) { used[offIndex] = true; sorted[offIndex].t } else kf.t
+			val offT = if (offIndex >= 0) {
+				used[offIndex] = true
+				sorted[offIndex].t
+			} else kf.t
 			val startMs = (kf.t * durationMs).toInt()
 			val endMs = (offT * durationMs).toInt()
-			result.add(EditEvent(kf.x, kf.y, kf.velocity, startMs, (endMs - startMs).coerceAtLeast(10)))
+			result.add(
+				EditEvent(
+					kf.x, kf.y, kf.velocity, startMs,
+					(endMs - startMs).coerceAtLeast(10),
+				),
+			)
 		}
 		return result.sortedBy { it.startMs }
 	}
 
-	private fun adjustTime(deltaMs: Int) {
-		authoringTimeMs = (authoringTimeMs + deltaMs).coerceAtLeast(0)
-		timeText.text = "Time: ${authoringTimeMs}ms"
-	}
-
 	private fun placeEvent(x: Int, y: Int, velocity: Int) {
-		events.add(EditEvent(x, y, velocity, authoringTimeMs, FIXED_DURATION_MS))
+		val at = selectedStartMs ?: 0
+		events.add(EditEvent(x, y, velocity, at, FIXED_DURATION_MS))
 		events.sortBy { it.startMs }
-		viewModel.logDebug("Lightshow: placed pad ($x,$y) vel=$velocity at ${authoringTimeMs}ms for ${FIXED_DURATION_MS}ms")
+		selectedStartMs = at
+		viewModel.logDebug("Lightshow: pad ($x,$y) v=$velocity at ${at}ms")
+		savePattern(staySelected = true)
 		refresh()
 	}
 
 	private fun removeEvent(event: EditEvent) {
 		events.remove(event)
+		if (selectedStartMs != null && events.none { it.startMs == selectedStartMs }) {
+			selectedStartMs = events.firstOrNull()?.startMs
+		}
+		savePattern(staySelected = true)
 		refresh()
+	}
+
+	private fun showEventEditor(event: EditEvent) {
+		val ctx = requireContext()
+		val density = resources.displayMetrics.density
+		val pad = (8 * density).toInt()
+		val col = LinearLayout(ctx).apply {
+			orientation = LinearLayout.VERTICAL
+			setPadding(pad, pad, pad, pad)
+		}
+
+		fun field(label: String, value: String): EditText {
+			col.addView(TextView(ctx).apply {
+				text = label
+				setTextColor(Color.parseColor("#AAAAAA"))
+				textSize = 11f
+			})
+			val et = EditText(ctx).apply {
+				setText(value)
+				setTextColor(Color.parseColor("#EEEEEE"))
+				setHintTextColor(Color.parseColor("#666666"))
+				inputType = android.text.InputType.TYPE_CLASS_NUMBER
+			}
+			col.addView(et)
+			return et
+		}
+
+		val startEt = field("Start (ms)", event.startMs.toString())
+		val durEt = field("Duration (ms)", event.durationMs.toString())
+		val velEt = field("Velocity (1-127)", event.velocity.toString())
+		val xEt = field("Pad X (1-8)", (event.x + 1).toString())
+		val yEt = field("Pad Y (1-8)", (event.y + 1).toString())
+
+		AlertDialog.Builder(ctx)
+			.setTitle("Edit event")
+			.setView(col)
+			.setPositiveButton("OK") { _, _ ->
+				val newStart = startEt.text.toString().toIntOrNull()?.coerceAtLeast(0) ?: event.startMs
+				val newDur = durEt.text.toString().toIntOrNull()?.coerceAtLeast(10) ?: event.durationMs
+				val newVel = velEt.text.toString().toIntOrNull()?.coerceIn(1, 127) ?: event.velocity
+				val nx = (xEt.text.toString().toIntOrNull() ?: (event.x + 1)).coerceIn(1, 8) - 1
+				val ny = (yEt.text.toString().toIntOrNull() ?: (event.y + 1)).coerceIn(1, 8) - 1
+				val idx = events.indexOf(event)
+				if (idx >= 0) {
+					events[idx] = EditEvent(nx, ny, newVel, newStart, newDur)
+					selectedStartMs = newStart
+				}
+				events.sortBy { it.startMs }
+				savePattern(staySelected = true)
+				refresh()
+			}
+			.setNeutralButton("Delete") { _, _ -> removeEvent(event) }
+			.setNegativeButton("Cancel", null)
+			.show()
 	}
 
 	private fun playPreview() {
@@ -282,7 +355,7 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		audioPreview = null
 	}
 
-	private fun saveAndDeselect() {
+	private fun savePattern(staySelected: Boolean) {
 		stopPreview()
 		val segmentIndex = viewModel.selectedLightshowSegment.value ?: return
 		val session = viewModel.markingSession.value ?: return
@@ -291,7 +364,7 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
 		if (events.isEmpty()) {
 			viewModel.assignLightPatternToSelected(null)
-			viewModel.deselectLightshowSegment()
+			if (!staySelected) viewModel.deselectLightshowSegment()
 			return
 		}
 
@@ -299,15 +372,23 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		events.forEach { ev ->
 			val onT = (ev.startMs.toFloat() / durationMs).coerceIn(0f, 1f)
 			val offT = ((ev.startMs + ev.durationMs).toFloat() / durationMs).coerceIn(onT, 1f)
-			keyframes.add(Keyframe(t = onT, x = ev.x, y = ev.y, on = true, velocity = ev.velocity.coerceIn(1, 127)))
-			keyframes.add(Keyframe(t = offT, x = ev.x, y = ev.y, on = false, velocity = 1))
+			keyframes.add(
+				Keyframe(
+					t = onT, x = ev.x, y = ev.y, on = true,
+					velocity = ev.velocity.coerceIn(1, 127),
+				),
+			)
+			keyframes.add(
+				Keyframe(t = offT, x = ev.x, y = ev.y, on = false, velocity = 1),
+			)
 		}
-		val pattern = Pattern(name = "cut${segmentIndex + 1}", keyframes = keyframes)
-		viewModel.assignLightPatternToSelected(pattern)
-		// Stay on this cut so user can keep editing — only BACK deselects
-		loadedForSegment = null
-		onSelectionChanged(segmentIndex)
-		statusText.text = "Saved lightshow on cut ${segmentIndex + 1} (${events.size} events)."
+		val name = segment.lightPattern?.name?.takeIf { it.isNotBlank() } ?: "cut${segmentIndex + 1}"
+		viewModel.assignLightPatternToSelected(Pattern(name = name, keyframes = keyframes))
+		if (!staySelected) {
+			viewModel.deselectLightshowSegment()
+		} else {
+			loadedForSegment = segmentIndex
+		}
 	}
 
 	private fun refresh() {
@@ -376,18 +457,14 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 	) {
 		val segment = session.segment(segmentIndex)
 		val button = segment.button
-		val stackCount = if (button != null) {
-			session.segments().count { it.button == button }
-		} else 1
-		val stackPart = if (stackCount > 1) "  [${stackCount} on pad]" else ""
 		val patternName = segment.lightPattern?.name?.takeIf { it.isNotBlank() }
-		statusText.text = if (button != null) {
-			"Editing cut ${segmentIndex + 1} (${segment.durationMs}ms) pad (${button.x + 1},${button.y + 1})$stackPart" +
-				(if (patternName != null) "  [$patternName]" else "")
-		} else {
-			"Editing cut ${segmentIndex + 1} (${segment.durationMs}ms)"
+		val groupHint = selectedStartMs?.let { "  | focus ${it}ms" } ?: ""
+		statusText.text = buildString {
+			append("Cut ${segmentIndex + 1} (${segment.durationMs}ms)")
+			if (button != null) append(" pad (${button.x + 1},${button.y + 1})")
+			if (patternName != null) append(" [$patternName]")
+			append(groupHint)
 		}
-		timeText.text = "Time: ${authoringTimeMs}ms"
 
 		g.clearAllPads()
 		g.clearAllHighlights()
@@ -400,27 +477,53 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		}
 
 		eventListContainer.removeAllViews()
-		events.forEachIndexed { i, ev ->
-			val row = TextView(requireContext()).apply {
-				textSize = 12f
-				setPadding(6, 6, 6, 6)
-				setTextColor(Color.parseColor("#DDDDDD"))
-				text = "${i + 1}. (${ev.x + 1},${ev.y + 1}) v=${ev.velocity} ${ev.startMs}-${ev.startMs + ev.durationMs}ms"
-				setOnLongClickListener {
-					removeEvent(ev)
-					true
+		if (events.isEmpty()) {
+			eventListContainer.addView(
+				TextView(requireContext()).apply {
+					textSize = 11f
+					setPadding(6, 6, 6, 6)
+					setTextColor(Color.parseColor("#888888"))
+					text = "Empty — pick a PRESET on the right, or tap main pads to place lights."
+				},
+			)
+			return
+		}
+
+		val groups = events.groupBy { it.startMs }.toSortedMap()
+		groups.forEach { (startMs, group) ->
+			val isFocus = selectedStartMs == startMs
+			val header = TextView(requireContext()).apply {
+				textSize = 11f
+				setPadding(6, 10, 6, 4)
+				setTextColor(if (isFocus) Color.parseColor("#00ADB5") else Color.parseColor("#8888AA"))
+				text = if (isFocus) "▼ ${startMs}ms  (${group.size} pad(s)) — selected"
+				else "▶ ${startMs}ms  (${group.size} pad(s))"
+				setOnClickListener {
+					selectedStartMs = startMs
+					refresh()
 				}
 			}
-			eventListContainer.addView(row)
-		}
-		if (events.isEmpty()) {
-			val hint = TextView(requireContext()).apply {
-				textSize = 11f
-				setPadding(6, 6, 6, 6)
-				setTextColor(Color.parseColor("#888888"))
-				text = "Pick a color, set Time, tap main pads to place. Long-press event to remove. Or pick a PRESET on the right."
+			eventListContainer.addView(header)
+
+			group.forEach { ev ->
+				val row = TextView(requireContext()).apply {
+					textSize = 12f
+					setPadding(16, 8, 6, 8)
+					val bg = if (isFocus) Color.parseColor("#252540") else Color.parseColor("#1A1A2E")
+					setBackgroundColor(bg)
+					setTextColor(Color.parseColor("#DDDDDD"))
+					text = "(${ev.x + 1},${ev.y + 1})  v=${ev.velocity}  ${ev.startMs}+${ev.durationMs}ms"
+					setOnClickListener {
+						selectedStartMs = ev.startMs
+						showEventEditor(ev)
+					}
+					setOnLongClickListener {
+						removeEvent(ev)
+						true
+					}
+				}
+				eventListContainer.addView(row)
 			}
-			eventListContainer.addView(hint)
 		}
 	}
 
