@@ -22,8 +22,9 @@ import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
 
 /**
  * Lightshow authoring UI hosted in the LED drawer.
- * Pad interaction and LED paint use the **main** VirtualLaunchpadGridView in MainActivity
- * (this fragment's grid is gone/hidden). Stacked cuts on the same pad cycle on re-tap.
+ * Pad interaction and LED paint use the **main** VirtualLaunchpadGridView in MainActivity.
+ * Presets applied from the right strip force-reload into [events] so color/time stay editable
+ * without backing out.
  */
 class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
@@ -59,7 +60,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 	private var authoringTimeMs = 0
 	private var loadedForSegment: Int? = null
 
-	/** Prefer the center Launchpad; fall back to the (hidden) local grid. */
 	private fun paintGrid(): VirtualLaunchpadGridView {
 		val main = (activity as? MainActivity)?.mainLaunchpadGrid()
 		return main ?: grid
@@ -112,6 +112,14 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		viewModel.colorVelocityOverride.observe(viewLifecycleOwner) { refreshVelocityText() }
 		viewModel.segmentVersion.observe(viewLifecycleOwner) { refresh() }
 		viewModel.markingSession.observe(viewLifecycleOwner) { refresh() }
+		// Preset applied while still editing this cut — force reload events from pattern
+		viewModel.lightshowEditorEpoch.observe(viewLifecycleOwner) {
+			val sel = viewModel.selectedLightshowSegment.value
+			if (sel != null) {
+				loadedForSegment = null
+				onSelectionChanged(sel)
+			}
+		}
 
 		viewModel.lightshowPadPress.observe(viewLifecycleOwner) { press ->
 			if (press != null) {
@@ -123,7 +131,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
 	override fun onResume() {
 		super.onResume()
-		// Flag is owned by ProjectViewModel.enterUiMode(LIGHTS); do not fight it here.
 		if (viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS) {
 			viewModel.isLightshowTabActive = true
 		}
@@ -132,7 +139,6 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
 	override fun onPause() {
 		stopPreview()
-		// Leave isLightshowTabActive alone -- leaving the drawer mid-LIGHTS still uses main pad.
 		super.onPause()
 	}
 
@@ -298,7 +304,10 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		}
 		val pattern = Pattern(name = "cut${segmentIndex + 1}", keyframes = keyframes)
 		viewModel.assignLightPatternToSelected(pattern)
-		viewModel.deselectLightshowSegment()
+		// Stay on this cut so user can keep editing — only BACK deselects
+		loadedForSegment = null
+		onSelectionChanged(segmentIndex)
+		statusText.text = "Saved lightshow on cut ${segmentIndex + 1} (${events.size} events)."
 	}
 
 	private fun refresh() {
@@ -371,8 +380,10 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 			session.segments().count { it.button == button }
 		} else 1
 		val stackPart = if (stackCount > 1) "  [${stackCount} on pad]" else ""
+		val patternName = segment.lightPattern?.name?.takeIf { it.isNotBlank() }
 		statusText.text = if (button != null) {
-			"Editing cut ${segmentIndex + 1} (${segment.durationMs}ms) pad (${button.x + 1},${button.y + 1})$stackPart"
+			"Editing cut ${segmentIndex + 1} (${segment.durationMs}ms) pad (${button.x + 1},${button.y + 1})$stackPart" +
+				(if (patternName != null) "  [$patternName]" else "")
 		} else {
 			"Editing cut ${segmentIndex + 1} (${segment.durationMs}ms)"
 		}
@@ -407,7 +418,7 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 				textSize = 11f
 				setPadding(6, 6, 6, 6)
 				setTextColor(Color.parseColor("#888888"))
-				text = "Pick a color, set Time, tap main pads to place. Long-press event to remove."
+				text = "Pick a color, set Time, tap main pads to place. Long-press event to remove. Or pick a PRESET on the right."
 			}
 			eventListContainer.addView(hint)
 		}
