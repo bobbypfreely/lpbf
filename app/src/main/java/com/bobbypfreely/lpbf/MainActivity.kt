@@ -183,6 +183,13 @@ class MainActivity : AppCompatActivity() {
 				viewModel.clearPreviewRequest()
 			}
 		}
+		viewModel.keyLedDraft.observe(this) { text ->
+			if (text != null) {
+				ledEditor.setText(text)
+				findViewById<TextView?>(R.id.ledFolderSummary)?.text =
+					if (text.isBlank()) "(no LED patterns yet)" else "Preset keyLED (${text.lines().size} lines)"
+			}
+		}
 		viewModel.uiMode.observe(this) { mode ->
 			applyUiMode(mode)
 			showTipForMode(mode)
