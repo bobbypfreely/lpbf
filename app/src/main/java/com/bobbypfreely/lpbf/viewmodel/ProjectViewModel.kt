@@ -493,7 +493,14 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		logDebug("Cut ${segmentIndex + 1} -> pad ($x,$y)")
 	}
 
-	/** Apply a named pattern shortcut to the selected lightshow segment (or [segmentIndex]). */
+	/**
+	 * Apply a preset to a cut.
+	 * Timing rule (user): if the design is longer than the cut, scale it down to fit;
+	 * if shorter, keep absolute times (do not stretch to fill the cut).
+	 * Built-ins are authored 0..1 against [PRESET_DESIGN_MS].
+	 * Pushes compiled keyLED text into [keyLedDraft] for the left panel, and bumps
+	 * [lightshowEditorEpoch] so LightshowFragment reloads events for color/time edit.
+	 */
 	fun applyPatternShortcut(pattern: com.bobbypfreely.lpbf.lightshow.Pattern, segmentIndex: Int? = null) {
 		val session = _markingSession.value ?: return
 		val index = segmentIndex ?: _selectedLightshowSegment.value ?: return
@@ -502,12 +509,54 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 			return
 		}
 		try {
-			session.assignPattern(index, pattern)
+			val cutMs = session.segment(index).durationMs.coerceAtLeast(1)
+			val fitted = fitPatternToCut(pattern, cutMs, PRESET_DESIGN_MS)
+			session.assignPattern(index, fitted)
+			// Keep selection on this cut so the editor stays open
+			_selectedLightshowSegment.value = index
 			notifySegmentsChanged()
-			logDebug("Pattern '${pattern.name}' -> cut ${index + 1}")
+			_lightshowEditorEpoch.value = (_lightshowEditorEpoch.value ?: 0) + 1
+			val events = com.bobbypfreely.lpbf.lightshow.PatternCompiler.compile(fitted, cutMs)
+			val text = com.bobbypfreely.lpbf.lightshow.KeyLedWriter.write(events)
+			_keyLedDraft.value = text
+			logDebug("Preset '${pattern.name}' -> cut ${index + 1} (${cutMs}ms, ${fitted.keyframes.size} kf)")
 		} catch (e: Exception) {
 			logDebug("Preset failed: ${e.message}")
 		}
+	}
+
+	/** Bumped when a preset is applied so the Lights editor reloads without deselecting. */
+	private val _lightshowEditorEpoch = MutableLiveData(0)
+	val lightshowEditorEpoch: LiveData<Int> = _lightshowEditorEpoch
+
+	/** Full keyLED text for the left panel after preset / save. */
+	private val _keyLedDraft = MutableLiveData<String?>(null)
+	val keyLedDraft: LiveData<String?> = _keyLedDraft
+
+	fun clearKeyLedDraft() { _keyLedDraft.value = null }
+
+	/** Reference length for built-in presets (fractional 0..1 maps to this many ms). */
+	private val PRESET_DESIGN_MS = 1000
+
+	/**
+	 * Map a 0..1 design pattern onto [cutDurationMs]:
+	 * - design longer than cut → scale down to fill the cut
+	 * - design shorter or equal → keep absolute timing (show ends early; no stretch)
+	 */
+	fun fitPatternToCut(
+		pattern: com.bobbypfreely.lpbf.lightshow.Pattern,
+		cutDurationMs: Int,
+		designDurationMs: Int = PRESET_DESIGN_MS,
+	): com.bobbypfreely.lpbf.lightshow.Pattern {
+		val cut = cutDurationMs.coerceAtLeast(1)
+		val design = designDurationMs.coerceAtLeast(1)
+		val scaleDown = if (design > cut) cut.toFloat() / design else 1f
+		val kf = pattern.keyframes.map { k ->
+			val absMs = k.t * design * scaleDown
+			val newT = (absMs / cut).coerceIn(0f, 1f)
+			k.copy(t = newT)
+		}
+		return pattern.copy(name = pattern.name, keyframes = kf)
 	}
 
 
@@ -605,6 +654,14 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		val index = _selectedLightshowSegment.value ?: return
 		session.assignPattern(index, pattern)
 		notifySegmentsChanged()
+		_lightshowEditorEpoch.value = (_lightshowEditorEpoch.value ?: 0) + 1
+		if (pattern != null) {
+			val cutMs = session.segment(index).durationMs.coerceAtLeast(1)
+			val events = com.bobbypfreely.lpbf.lightshow.PatternCompiler.compile(pattern, cutMs)
+			_keyLedDraft.value = com.bobbypfreely.lpbf.lightshow.KeyLedWriter.write(events)
+		} else {
+			_keyLedDraft.value = ""
+		}
 	}
 
 	private val _colorHueSlot = MutableLiveData(LightshowColorWheel.SLOT_RED)
