@@ -578,4 +578,4 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		stopPreview()
 		super.onDestroyView()
 	}
-}
+} 
