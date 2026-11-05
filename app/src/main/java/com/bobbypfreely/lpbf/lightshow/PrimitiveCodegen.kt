@@ -1,7 +1,6 @@
 package com.bobbypfreely.lpbf.lightshow
 
 import kotlin.math.hypot
-import kotlin.math.roundToInt
 
 /**
  * Turns a [PhraseParser.PrimitiveStep] into a duration-agnostic Pattern (t in 0..1).
@@ -114,11 +113,9 @@ object PrimitiveCodegen {
 	/** Short hold then hard all-off — the “whip” ending. */
 	private fun whipOff(w: Int, h: Int): Pattern {
 		val kf = ArrayList<Keyframe>()
-		// brief full on
 		for (x in 0 until w) for (y in 0 until h) {
 			kf += Keyframe(0.0f, x, y, true, 127)
 		}
-		// hard cut
 		for (x in 0 until w) for (y in 0 until h) {
 			kf += Keyframe(0.12f, x, y, false)
 		}
@@ -130,12 +127,11 @@ object PrimitiveCodegen {
 		val cx = (w - 1) / 2
 		val cy = (h - 1) / 2
 		val kf = ArrayList<Keyframe>()
-		// four “spokes” that light in sequence
 		val spokes = listOf(
-			listOf(cx to 0, cx to 1),           // top
-			listOf(w - 1 to cy, w - 2 to cy),   // right
-			listOf(cx to h - 1, cx to h - 2),   // bottom
-			listOf(0 to cy, 1 to cy),           // left
+			listOf(cx to 0, cx to 1),
+			listOf(w - 1 to cy, w - 2 to cy),
+			listOf(cx to h - 1, cx to h - 2),
+			listOf(0 to cy, 1 to cy),
 		)
 		spokes.forEachIndexed { i, pts ->
 			val tOn = i * 0.2f
@@ -152,7 +148,6 @@ object PrimitiveCodegen {
 
 	private fun sparkle(w: Int, h: Int): Pattern {
 		val kf = ArrayList<Keyframe>()
-		// pseudo-random sparse hits
 		var seed = 17
 		for (i in 0 until 24) {
 			seed = (seed * 1103515245 + 12345) and 0x7fffffff
