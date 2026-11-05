@@ -83,4 +83,4 @@ object LightsBot {
 		val status = "Applied " + used.joinToString(" + ")
 		return Result(pattern, status, used)
 	}
-}
+} 
