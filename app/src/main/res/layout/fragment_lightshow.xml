@@ -13,6 +13,39 @@
 		android:textColor="#DDDDDD"
 		android:textSize="12sp" />
 
+	<!-- Lights Bot prompt strip -->
+	<LinearLayout
+		android:id="@+id/lightshowBotRow"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="6dp"
+		android:orientation="horizontal"
+		android:gravity="center_vertical">
+
+		<EditText
+			android:id="@+id/lightshowBotPrompt"
+			android:layout_width="0dp"
+			android:layout_height="40dp"
+			android:layout_weight="1"
+			android:hint="Describe lights… (bloom, cascade, whip)"
+			android:inputType="text"
+			android:imeOptions="actionGo"
+			android:textColor="#EEEEEE"
+			android:textColorHint="#666666"
+			android:textSize="12sp"
+			android:paddingStart="8dp"
+			android:paddingEnd="8dp"
+			android:background="#2A2A3E" />
+
+		<Button
+			android:id="@+id/lightshowBotGo"
+			android:layout_width="wrap_content"
+			android:layout_height="40dp"
+			android:text="Bot"
+			android:textSize="11sp"
+			android:minWidth="56dp" />
+	</LinearLayout>
+
 	<TextView
 		android:id="@+id/lightshowRowLabel"
 		android:layout_width="match_parent"
