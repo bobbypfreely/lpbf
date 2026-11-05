@@ -77,7 +77,6 @@ object BotNoteStore {
 	/**
 	 * Very simple match: any tag or the name appears as a substring
 	 * of the prompt (case-insensitive). First hit wins.
-	 * Later we can score / rank; keep it dumb and offline for now.
 	 */
 	fun match(context: Context, prompt: String): Note? {
 		val p = prompt.lowercase()
