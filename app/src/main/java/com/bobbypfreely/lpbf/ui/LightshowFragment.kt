@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -16,6 +17,7 @@ import com.bobbypfreely.lpbf.MainActivity
 import com.bobbypfreely.lpbf.R
 import com.bobbypfreely.lpbf.audio.AudioPlaybackController
 import com.bobbypfreely.lpbf.lightshow.Keyframe
+import com.bobbypfreely.lpbf.lightshow.LightsBot
 import com.bobbypfreely.lpbf.lightshow.LightshowColorWheel
 import com.bobbypfreely.lpbf.lightshow.Pattern
 import com.bobbypfreely.lpbf.manager.LaunchpadColor
@@ -39,6 +41,8 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 	private lateinit var editControls: LinearLayout
 	private lateinit var eventListContainer: LinearLayout
 	private lateinit var grid: VirtualLaunchpadGridView
+	private lateinit var botPrompt: EditText
+	private lateinit var botGo: Button
 
 	private val hardwareButtons = mutableListOf<Button>()
 	private val previewHandler = Handler(Looper.getMainLooper())
@@ -74,6 +78,8 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		editControls = view.findViewById(R.id.lightshowEditControls)
 		eventListContainer = view.findViewById(R.id.lightshowEventListContainer)
 		grid = view.findViewById(R.id.lightshowGrid)
+		botPrompt = view.findViewById(R.id.lightshowBotPrompt)
+		botGo = view.findViewById(R.id.lightshowBotGo)
 
 		buildHardwareButtonRow()
 
@@ -83,6 +89,16 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		view.findViewById<Button>(R.id.lightshowBack).setOnClickListener {
 			stopPreview()
 			viewModel.deselectLightshowSegment()
+		}
+
+		botGo.setOnClickListener { runLightsBot() }
+		botPrompt.setOnEditorActionListener { _, actionId, _ ->
+			if (actionId == EditorInfo.IME_ACTION_GO) {
+				runLightsBot()
+				true
+			} else {
+				false
+			}
 		}
 
 		viewModel.selectedLightshowSegment.observe(viewLifecycleOwner) { onSelectionChanged(it) }
@@ -353,6 +369,37 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		events.forEach { ev -> driver.sendPadLed(ev.x, ev.y, 0) }
 		audioPreview?.stop()
 		audioPreview = null
+	}
+
+	/** Run the on-device Lights Bot on the current prompt and apply to selected cut. */
+	private fun runLightsBot() {
+		val prompt = botPrompt.text?.toString()?.trim().orEmpty()
+		if (prompt.isEmpty()) {
+			statusText.text = "Type a lights description first."
+			return
+		}
+		val segmentIndex = viewModel.selectedLightshowSegment.value
+		if (segmentIndex == null) {
+			statusText.text = "Select a cut first, then run the bot."
+			return
+		}
+
+		statusText.text = "Bot thinking…"
+
+		val result = LightsBot.run(
+			prompt = prompt,
+			gridWidth = 8,
+			gridHeight = 8,
+			context = requireContext().applicationContext,
+		)
+		if (result == null) {
+			statusText.text = "Bot: nothing to apply."
+			return
+		}
+
+		// Same path as presets — editable + exportable
+		viewModel.applyPatternShortcut(result.pattern, segmentIndex)
+		statusText.text = result.status
 	}
 
 	private fun savePattern(staySelected: Boolean) {
