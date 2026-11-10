@@ -694,4 +694,4 @@ class MainActivity : AppCompatActivity() {
 		presetsFilled = true
 		viewModel.logDebug("Presets panel: ${patterns.size} shortcuts")
 	}
-}
+} 
