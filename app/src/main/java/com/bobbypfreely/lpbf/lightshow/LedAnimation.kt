@@ -1,13 +1,6 @@
 package com.bobbypfreely.lpbf.lightshow
 
-/**
- * Ported from unipad-android (kimjisub/unipad-android, LGPL-2.1),
- * app/src/main/java/com/kimjisub/launchpad/unipack/struct/LedAnimation.kt
- *
- * This is the exact event model UniPackFolder.keyLed() parses a keyLED file into.
- * Kept byte-for-byte compatible so our PatternCompiler output is a drop-in match
- * for what any unipack reader (including the original Unipad app) already expects.
- */
+/** Ported from unipad-android (kimjisub/unipad-android, LGPL-2.1), */
 class LedAnimation(
 	val ledEvents: ArrayList<LedEvent>,
 	val loop: Int,

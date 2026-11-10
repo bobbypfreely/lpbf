@@ -5,18 +5,7 @@ import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
 
-/**
- * Parses UniPad autoPlay files — behavior aligned with UniPackFolder.autoPlay()
- * in kimjisub/unipad-android (long and short tokens).
- *
- *   chain|c N     switch chain (1-based on disk), reset pad occurrence counters
- *   on|o X Y      press (queue slot = occurrence for this pad)
- *   off|f X Y     release (no new queue slot)
- *   touch|t X Y   on + off with no delay between
- *   delay|d MS    advance clock
- *
- * Coordinates and chain are 1-based on disk → 0-based [ButtonRef].
- */
+/** Parses UniPad autoPlay files — behavior aligned with UniPackFolder.autoPlay() */
 object AutoPlayReader {
 
 	fun read(file: File, buttonX: Int = 8, buttonY: Int = 8, chainCount: Int = 24): AutoPlayProgram {

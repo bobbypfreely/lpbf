@@ -10,11 +10,7 @@ import androidx.fragment.app.activityViewModels
 import com.bobbypfreely.lpbf.R
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
 
-/**
- * Finalize: one button, "Create Unipack", does the whole job in a single tap --
- * splices the marks into real clips, compiles every cut's lightshow, and writes a
- * complete Unipack zip to Documents/lpbf/. See ProjectViewModel.createUnipack().
- */
+/** Finalize: one button, "Create Unipack", does the whole job in a single tap -- */
 class SpliceFragment : Fragment(R.layout.fragment_splice) {
 
 	private val viewModel: ProjectViewModel by activityViewModels()

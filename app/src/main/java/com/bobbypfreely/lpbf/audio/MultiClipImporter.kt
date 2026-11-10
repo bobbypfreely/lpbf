@@ -6,13 +6,7 @@ import com.bobbypfreely.lpbf.marking.ButtonRef
 import java.io.ByteArrayOutputStream
 import java.io.File
 
-/** One audio source to fold into a concatenated import timeline, with an optional
- * pre-existing button assignment (used when importing a Unipack's keySound mapping;
- * left null for a plain "import pre-cut tracks" pick where nothing's mapped yet).
- *
- * [loop] / [wormhole] use Unipad semantics (loop 0 = hold, 1 = once; wormhole -1 = none).
- * Plain pre-cut imports leave the defaults so live mark-while-playing behaviour is unchanged.
- */
+/** /** One audio source to fold into a concatenated import timeline, with an optional */
 data class ImportClipSource(
 	val filePath: String,
 	val button: ButtonRef? = null,
@@ -32,15 +26,7 @@ data class MultiClipImportResult(
 	val skipped: List<String>,
 )
 
-/**
- * Decodes each source in order and concatenates them into ONE synthetic PCM timeline,
- * auto-generating a mark at every boundary. This is what lets "already cut" audio --
- * whether from a plain folder of files, or read out of an imported Unipack's keySound
- * table -- reuse the exact same MarkingSession/Place/Splice pipeline as anything cut
- * by hand on Mark & Cut, with zero changes to that pipeline.
- *
- * Live mark-while-playing is unaffected: that path never goes through here.
- */
+/** Decodes each source in order and concatenates them into ONE synthetic PCM timeline, */
 object MultiClipImporter {
 
 	fun buildConcatenatedImport(sources: List<ImportClipSource>, cacheDir: File): MultiClipImportResult {

@@ -2,12 +2,7 @@ package com.bobbypfreely.lpbf.audio
 
 import kotlin.math.roundToInt
 
-/**
- * Fully-decoded PCM audio for one source track, kept in memory. Tracks are short
- * enough (a song, not an album) that decoding whole-file up front is simpler and
- * more reliable than streaming, and it's what makes scrub/preview playback in
- * Phase 1 tap-marking responsive.
- */
+/** Fully-decoded PCM audio for one source track, kept in memory. Tracks are short */
 class DecodedAudio(
 	val pcm: ByteArray,      // interleaved 16-bit little-endian samples
 	val sampleRate: Int,
@@ -21,12 +16,7 @@ class DecodedAudio(
 
 	fun msToFrame(ms: Int): Int = (ms / 1000.0 * sampleRate).roundToInt()
 
-	/**
-	 * Slices PCM for [startMs, endMs) and returns both the raw bytes and the
-	 * PRECISE real duration in ms derived from the actual frame count -- not the
-	 * nominal endMs-startMs, which can be off by a fraction of a ms depending on
-	 * sample rate. That precise value is what must feed PatternCompiler later.
-	 */
+	/** Slices PCM for [startMs, endMs) and returns both the raw bytes and the */
 	fun slice(startMs: Int, endMs: Int): Pair<ByteArray, Int> {
 		require(startMs in 0..totalDurationMs) { "startMs $startMs out of range" }
 		require(endMs in startMs..totalDurationMs) { "endMs $endMs out of range" }

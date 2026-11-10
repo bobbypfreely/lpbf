@@ -36,10 +36,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	private val _autoPlayElements = MutableLiveData<List<com.bobbypfreely.lpbf.unipack.AutoPlayElement>>(emptyList())
 	val autoPlayElements: LiveData<List<com.bobbypfreely.lpbf.unipack.AutoPlayElement>> = _autoPlayElements
 
-	/**
-	 * Exact autoPlay file text from an imported Unipack (on/off/delay performance score).
-	 * Export must write this verbatim when present — sequential rebuild breaks UniPad.
-	 */
+	/** Exact autoPlay file text from an imported Unipack (on/off/delay performance score). */
 	var importedAutoPlayRaw: String? = null
 
 	/** Exact keySound file from imported pack — multi-hit queue order must not be rebuilt. */
@@ -381,12 +378,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	}
 
 
-	/**
-	 * EDIT mode pad hit:
-	 *  - If [remapSource] is set: move that pad's entire stack onto this pad.
-	 *  - Else if this pad has mappings: unmap one cut (LIFO) — cut becomes free again.
-	 *  - Else: assign next unmapped cut here.
-	 */
+	/** EDIT mode pad hit: */
 	private fun editPad(x: Int, y: Int) {
 		val session = _markingSession.value ?: return
 		if (session.isSpliced) return
@@ -493,14 +485,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		logDebug("Cut ${segmentIndex + 1} -> pad ($x,$y)")
 	}
 
-	/**
-	 * Apply a preset to a cut.
-	 * Timing rule (user): if the design is longer than the cut, scale it down to fit;
-	 * if shorter, keep absolute times (do not stretch to fill the cut).
-	 * Built-ins are authored 0..1 against [PRESET_DESIGN_MS].
-	 * Pushes compiled keyLED text into [keyLedDraft] for the left panel, and bumps
-	 * [lightshowEditorEpoch] so LightshowFragment reloads events for color/time edit.
-	 */
+	/** Apply a preset to a cut. */
 	fun applyPatternShortcut(pattern: com.bobbypfreely.lpbf.lightshow.Pattern, segmentIndex: Int? = null) {
 		val session = _markingSession.value ?: return
 		val index = segmentIndex ?: _selectedLightshowSegment.value ?: return
@@ -538,11 +523,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	/** Reference length for built-in presets (fractional 0..1 maps to this many ms). */
 	private val PRESET_DESIGN_MS = 1000
 
-	/**
-	 * Map a 0..1 design pattern onto [cutDurationMs]:
-	 * - design longer than cut → scale down to fill the cut
-	 * - design shorter or equal → keep absolute timing (show ends early; no stretch)
-	 */
+	/** Map a 0..1 design pattern onto cutDurationMs: */
 	fun fitPatternToCut(
 		pattern: com.bobbypfreely.lpbf.lightshow.Pattern,
 		cutDurationMs: Int,
@@ -793,11 +774,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	fun projectsRoot(context: android.content.Context): File =
 		File(context.filesDir, "projects").also { it.mkdirs() }
 
-	/**
-	 * Silent background autosave. Writes marks/map/lights + a copy of the track under
-	 * filesDir/projects/autosave/. Safe to call on every mode/tab change and onPause.
-	 * No-op if nothing is loaded yet.
-	 */
+	/** Silent background autosave. Writes marks/map/lights + a copy of the track under */
 	fun autosave(context: android.content.Context): Boolean {
 		val session = _markingSession.value ?: return false
 		val srcPath = cachedFilePath ?: return false
@@ -933,12 +910,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 	}
 
 
-	/**
-	 * Export autoPlay priority:
-	 * 1) Imported raw text (exact UniPad performance file)
-	 * 2) Serialize stored elements (still correct timing; never concat startMs)
-	 * 3) null → writer builds from entry startMs (hand-marked packs only)
-	 */
+	/** Export autoPlay priority: */
 	private fun resolveAutoPlayForExport(): String? {
 		val raw = importedAutoPlayRaw
 		if (!raw.isNullOrBlank()) return raw

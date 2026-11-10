@@ -50,7 +50,7 @@ object PatternShortcutStore {
 		return f.exists() && f.delete()
 	}
 
-	/** Built-ins + user shortcuts (user names win on collision). */
+	/** Built-ins plus user shortcuts. */
 	fun allAvailable(context: Context, gridWidth: Int = 8, gridHeight: Int = 8): List<Pattern> {
 		val built = BuiltInPatterns.all(gridWidth, gridHeight)
 		val user = listUser(context).mapNotNull { load(context, it) }

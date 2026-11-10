@@ -6,20 +6,7 @@ import android.media.AudioTrack
 import android.util.Log
 import kotlin.concurrent.thread
 
-/**
- * Drives playback for Phase 1 live tap-marking: play from an arbitrary position,
- * stop and report exactly where playback was when stopped (that position becomes
- * the new mark).
- *
- * Lifecycle ownership is deliberate: the playback thread ALONE creates, writes to,
- * stops, and releases the AudioTrack, start to finish (in a try/finally so it happens
- * whether the loop exits naturally or via stopRequested). stop() on the calling thread
- * only flips a flag and joins -- it never touches the AudioTrack directly.
- *
- * [onDebug] is an optional hook surfacing internal state (buffer size, errors, exit
- * reason) to the UI without needing logcat -- temporary scaffolding while chasing the
- * "playback never advances" bug.
- */
+/** Drives playback for Phase 1 live tap-marking: play from an arbitrary position, */
 class AudioPlaybackController(
 	private val audio: DecodedAudio,
 	private val onDebug: ((String) -> Unit)? = null,

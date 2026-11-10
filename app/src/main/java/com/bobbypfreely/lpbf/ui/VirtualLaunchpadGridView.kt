@@ -10,10 +10,7 @@ import android.view.MotionEvent
 import android.view.View
 import kotlin.math.min
 
-/**
- * On-screen Launchpad: 8 top function keys + 8x8 main grid + 8 side chain buttons.
- * Top keys circular full-size; side chains smaller circles; pads rounded for black diamonds.
- */
+/** On-screen Launchpad: 8 top function keys + 8x8 main grid + 8 side chain buttons. */
 class VirtualLaunchpadGridView @JvmOverloads constructor(
 	context: Context,
 	attrs: AttributeSet? = null,

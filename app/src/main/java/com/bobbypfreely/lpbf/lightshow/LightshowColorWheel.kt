@@ -1,26 +1,6 @@
 package com.bobbypfreely.lpbf.lightshow
 
-/**
- * Maps the Lightshow editor's hardware color picker (8 chain buttons = hue, Up/Down
- * function keys = saturation, Left/Right = also step hue) onto real entries in
- * LaunchpadColor.ARGB -- NOT arbitrary RGB. Every real-world keyLED file inspected uses
- * "a <velocity>" (auto/palette color), never a literal hex color, so the editor should
- * only ever resolve to a palette index (0-127), matching what actual Unipacks contain.
- *
- * Each ladder below was derived (not guessed) by loading LaunchpadColor.ARGB, converting
- * every entry to HSV, and classifying every usable colorful entry (118 of 128 -- the rest
- * are near-duplicates or too dim/translucent to read on a pad) into whichever of the 6
- * hue centers (0/60/120/180/240/300 degrees) it's closest to. Within a bucket, entries
- * are sorted by vividness (saturation, weighted so darker-but-saturated doesn't beat a
- * brighter true color) first, hue-closeness only as a tiebreaker -- NOT hue-closeness
- * first. An earlier version sorted hue-closeness first, which meant "Blue" defaulted to
- * velocity 93 (a pale lavender, hue=240 exactly but saturation=0.27) over velocity 66/67
- * (real vivid blues, hue~213-225 but saturation~0.8+) -- mathematically closest to the
- * pure hue isn't the same as "looks like a strong version of that color," and the whole
- * point of index 0 being the default pick is that it should look right immediately.
- *
- * Chain button slots (0-7): 0=Red 1=Yellow 2=Green 3=Cyan 4=Blue 5=Magenta 6=White 7=Clear
- */
+/** Maps the Lightshow editor's hardware color picker (8 chain buttons = hue, Up/Down */
 object LightshowColorWheel {
 
 	const val SLOT_RED = 0
@@ -55,11 +35,7 @@ object LightshowColorWheel {
 		return LADDERS[hueSlot].size
 	}
 
-	/**
-	 * Resolves a (hueSlot, saturationLevel) pair to a real palette velocity (0-127).
-	 * saturationLevel is clamped into the ladder's range. SLOT_CLEAR always returns 0
-	 * (off), matching keyLED's "off" semantics.
-	 */
+	/** Resolves a (hueSlot, saturationLevel) pair to a real palette velocity (0-127). */
 	fun velocityFor(hueSlot: Int, saturationLevel: Int): Int {
 		if (hueSlot == SLOT_CLEAR) return 0
 		val ladder = LADDERS[hueSlot.coerceIn(0, LADDERS.size - 1)]

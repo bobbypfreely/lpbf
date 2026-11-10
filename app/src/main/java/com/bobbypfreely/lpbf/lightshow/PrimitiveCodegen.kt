@@ -3,7 +3,7 @@ package com.bobbypfreely.lpbf.lightshow
 import kotlin.math.hypot
 
 /**
- * Turns a [PhraseParser.PrimitiveStep] into a duration-agnostic Pattern (t in 0..1).
+ * Turns a [PhraseParser.PrimitiveStep] into a normalized-time Pattern (t in 0..1).
  */
 object PrimitiveCodegen {
 

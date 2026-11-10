@@ -1,11 +1,6 @@
 package com.bobbypfreely.lpbf.lightshow
 
-/**
- * Premade lightshow library for the composer.
- * Patterns are duration-agnostic (t in 0..1); PatternCompiler scales to the cut.
- *
- * Categories: basics, motion, bursts, glyphs (0–9, A–Z, suits, symbols).
- */
+/** Premade lightshow library for the composer. */
 object BuiltInPatterns {
 
 	fun all(gridWidth: Int = 8, gridHeight: Int = 8): List<Pattern> {

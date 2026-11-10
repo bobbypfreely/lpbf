@@ -1,9 +1,6 @@
 package com.bobbypfreely.lpbf.lightshow
 
-/**
- * Offline keyword / phrase rules → ordered list of [PrimitiveStep].
- * No network, no model. Deterministic.
- */
+/** Keyword rules → pattern steps. */
 object PhraseParser {
 
 	data class PrimitiveStep(
@@ -15,7 +12,7 @@ object PhraseParser {
 		val p = prompt.lowercase()
 		val steps = ArrayList<PrimitiveStep>()
 
-		// order matters — more specific phrases first
+		// more specific phrases first
 		fun has(vararg phrases: String) = phrases.any { p.contains(it) }
 
 		// explosions / blooms
@@ -60,7 +57,7 @@ object PhraseParser {
 			steps += PrimitiveStep("sparkle")
 		}
 
-		// if nothing matched, give a safe default based on length
+		// default
 		if (steps.isEmpty()) {
 			steps += if (p.length < 12) PrimitiveStep("flash") else PrimitiveStep("bloom")
 		}

@@ -2,11 +2,7 @@ package com.bobbypfreely.lpbf.ui
 
 import com.bobbypfreely.lpbf.midi.controller.MidiController
 
-/**
- * Wraps the ported MidiController so a real, physically-connected Launchpad drives the same
- * PadInputListener contract the on-screen virtual grid uses. Register this as
- * MidiConnection.controller to receive real hardware pad presses.
- */
+/** Wraps the ported MidiController so a real, physically-connected Launchpad drives the … */
 class MidiControllerBridge(private val listener: PadInputListener) : MidiController() {
 
 	override fun onAttach() {}

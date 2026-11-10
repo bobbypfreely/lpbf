@@ -2,36 +2,13 @@ package com.bobbypfreely.lpbf.lightshow
 
 import java.io.File
 
-/**
- * Reads a real keyLED file back into this app's own Pattern model. This is the missing
- * half of KeyLedWriter -- confirmed against a real Unipack ("Store_Sing_me_to_sleep")
- * and the official unipad.io docs:
- *   - Filenames: "<chain> <x> <y> <loop>[ <suffix>]", all 1-indexed on disk.
- *   - Two command dialects appear in real packs and both parse fine: abbreviated
- *     (o/f/d) and full-word (on/off/delay). Whichever a given file uses, every line in
- *     it uses consistently.
- *   - Color is always "a <velocity>" (auto/palette) in every real file seen so far --
- *     velocity is a direct index into LaunchpadColor.ARGB, not RGB.
- *   - The suffix letter is for multi-mapping: multiple keySound lines sharing the same
- *     (chain,x,y) each get their own lettered keyLED file, matched 1:1 in file order.
- */
+/** Reads a real keyLED file back into this app's own Pattern model. This is the missing */
 object KeyLedReader {
 
-	/** One on/off event at an absolute millisecond offset from the start of this
-	 * particular keyLED file's own timeline (i.e. relative to whichever single button
-	 * press triggers it -- not the whole track). [color] is the literal ARGB value when
-	 * the file specified one explicitly; null means "use the palette color for
-	 * [velocity]" (the "a"/"auto" form, which is what almost every real file uses). */
+	/** /** One on/off event at an absolute millisecond offset from the start of this */
 	data class TimedEvent(val atMs: Int, val x: Int, val y: Int, val on: Boolean, val velocity: Int, val color: Int? = null)
 
-	/**
-	 * Finds the Nth keyLED file mapped to (chain,x,y), where N is [occurrenceIndex] --
-	 * the position of this button-mapping among every keySound line sharing that exact
-	 * button, in the order they appear in keySound. For an unstacked button (only one
-	 * sound mapped) occurrenceIndex is always 0, which also matches an un-suffixed file.
-	 * Files are matched by their first 3 whitespace-separated tokens (chain, x, y) --
-	 * not a raw string prefix -- so e.g. "3 2 2 ..." never accidentally matches "3 2 22 ...".
-	 */
+	/** Finds the Nth keyLED file mapped to (chain,x,y), where N is occurrenceIndex -- */
 	fun findFile(keyLedDir: File, chain: Int, x: Int, y: Int, occurrenceIndex: Int): File? {
 		val wantChain = (chain + 1).toString()
 		val wantX = (x + 1).toString()
@@ -44,28 +21,7 @@ object KeyLedReader {
 		return candidates.getOrNull(occurrenceIndex)
 	}
 
-	/** Parses one keyLED file's raw text into a flat, time-ordered event list. Malformed
-	 * or unrecognized lines are skipped rather than throwing -- a partially-garbled file
-	 * should still import whatever it can, same spirit as UnipackReader's own warnings.
-	 *
-	 * Rebuilt directly against the real parser (kimjisub/unipad-android,
-	 * UniPackFolder.kt's keyLed() function) rather than inference, confirmed
-	 * against Bobby's own copy of that source on 2026-09-10. Real formats:
-	 *   o <x|mc|*> <y> <hexColor>              -- explicit color, default velocity (4)
-	 *   o <x|mc|*> <y> a <velocity>             -- palette color (the common case)
-	 *   o <x|mc|*> <y> <hexColor> <velocity>    -- explicit color AND velocity together
-	 *   f <x|mc|*> <y>                          -- off
-	 *   d <ms>                                  -- delay
-	 * "mc" and "*" are both real synonyms for the round/chain-wide LED (x=-1, y=column).
-	 * "l" (the single fixed scene-launch button) is NOT supported by the real app either
-	 * -- its own parser hits this case and skips it, same as ours used to. LPBF still
-	 * captures it as x=-1,y=-1 rather than dropping it -- that's purely our own
-	 * extension since it's harmless to keep, not a confirmed real behavior.
-	 * "chain"/"c" mid-file (a real, supported format for embedding a chain-jump inside
-	 * a single button's own animation) is intentionally NOT preserved yet -- LPBF's
-	 * Pattern/Keyframe model has no slot for an embedded chain-jump event, only on/off.
-	 * Safe to skip: falls through the `when` as a no-op, same as any other unknown line.
-	 */
+	/** /** Parses one keyLED file's raw text into a flat, time-ordered event list. Malformed */
 	fun parse(file: File): List<TimedEvent> {
 		var t = 0
 		val events = mutableListOf<TimedEvent>()
@@ -145,10 +101,7 @@ object KeyLedReader {
 		return events
 	}
 
-	/** Converts a parsed event list into a duration-agnostic Pattern, scaling each
-	 * event's absolute ms against [durationMs] (the matched sound clip's real decoded
-	 * duration, not the keyLED file's own delay total -- real packs run those two
-	 * numbers slightly differently, see prior investigation). */
+	/** /** Converts a parsed event list into a normalized-time Pattern, scaling each */
 	fun toPattern(name: String, events: List<TimedEvent>, durationMs: Int): Pattern? {
 		if (events.isEmpty() || durationMs <= 0) return null
 		val keyframes = events.map { e ->

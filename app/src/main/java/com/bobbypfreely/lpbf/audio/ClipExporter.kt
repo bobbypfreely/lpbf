@@ -11,14 +11,7 @@ data class ExportedClip(
 	val button: com.bobbypfreely.lpbf.marking.ButtonRef?,
 )
 
-/**
- * Runs after MarkingSession.splice() succeeds: turns each CommittedClip's timestamps
- * into a real WAV file sliced from the decoded source track.
- *
- * Applies a short linear fade-in / fade-out (default 10 ms) on every clip so sequential
- * pad hits don't click/pop at the splice points. Fade is pure PCM math — Unipack format
- * is unchanged.
- */
+/** Runs after MarkingSession.splice() succeeds: turns each CommittedClip's timestamps */
 object ClipExporter {
 
 	/** Fade length in milliseconds. Keep short so short cuts still have body. */

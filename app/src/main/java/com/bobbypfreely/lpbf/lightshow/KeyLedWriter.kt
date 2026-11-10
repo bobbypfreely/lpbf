@@ -1,19 +1,6 @@
 package com.bobbypfreely.lpbf.lightshow
 
-/**
- * Serializes a list of LedEvents into the plain-text keyLED format that
- * UniPackFolder.keyLed() (in the original unipad-android source) parses.
- * This is the writer half that the upstream project never needed, since it's read-only.
- *
- * Format per line, matching the real files:
- *   o <x|mc> <y> a <velocity>     -- on, auto color from velocity palette
- *   o <x|mc> <y> <hexColor> <velocity>  -- on, explicit color
- *   f <x|mc> <y>                  -- off
- *   d <ms>                        -- delay
- *   c <chain>                     -- chain jump (not emitted by PatternCompiler; reserved)
- *
- * Coordinates are written 1-indexed to match the on-disk format (parser subtracts 1 on read).
- */
+/** Serializes a list of LedEvents into the plain-text keyLED format that */
 object KeyLedWriter {
 
 	fun write(events: List<LedAnimation.LedEvent>): String {

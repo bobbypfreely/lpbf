@@ -13,7 +13,7 @@
 		android:textColor="#DDDDDD"
 		android:textSize="12sp" />
 
-	<!-- Lights Bot prompt strip -->
+	<!-- Pattern prompt -->
 	<LinearLayout
 		android:id="@+id/lightshowBotRow"
 		android:layout_width="match_parent"
@@ -27,7 +27,7 @@
 			android:layout_width="0dp"
 			android:layout_height="40dp"
 			android:layout_weight="1"
-			android:hint="Describe lights… (bloom, cascade, whip)"
+			android:hint="bloom, cascade, whip…"
 			android:inputType="text"
 			android:imeOptions="actionGo"
 			android:textColor="#EEEEEE"

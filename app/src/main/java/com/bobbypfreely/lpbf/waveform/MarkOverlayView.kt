@@ -7,11 +7,7 @@ import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 
-/**
- * Transparent overlay drawn on top of WaveformView, showing every mark as a thin
- * vertical line. WaveformView itself only ever tracked Ringdroid's original 2-handle
- * selection; this is the piece that visualizes however many cuts you've actually made.
- */
+/** Transparent overlay drawn on top of WaveformView, showing every mark as a thin */
 class MarkOverlayView @JvmOverloads constructor(
 	context: Context,
 	attrs: AttributeSet? = null,

@@ -1,18 +1,6 @@
 package com.bobbypfreely.lpbf.lightshow
 
-/**
- * A single lighting event within a Pattern, authored independent of real-world duration.
- *
- * @param t         Time as a fraction of the pattern's total duration, 0.0 (start) to 1.0 (end).
- * @param x         0-indexed pad column. Use -1 to target the round/chain-wide "mc" LED
- *                  (with y as its real column), or -1 together with y=-1 for the single
- *                  fixed "l" (scene-launch) button.
- * @param y         0-indexed pad row.
- * @param on        true = pad turns on at this time, false = pad turns off.
- * @param velocity  1-127 brightness/palette index. Only meaningful when [on] is true.
- * @param color     Optional literal ARGB color override. When null, the velocity-based
- *                  palette color is used (matches keyLED's "a <velocity>" auto-color form).
- */
+/** A single lighting event within a Pattern, authored independent of real-world duration. */
 data class Keyframe(
 	val t: Float,
 	val x: Int,
@@ -28,7 +16,7 @@ data class Keyframe(
 }
 
 /**
- * A named, duration-agnostic lightshow. Author it once against a target grid size;
+ * A named, normalized-time lightshow. Author it once against a target grid size;
  * PatternCompiler scales it to fit any clip length at compile time.
  */
 data class Pattern(
@@ -36,15 +24,7 @@ data class Pattern(
 	val keyframes: List<Keyframe>,
 )
 
-/**
- * Fade envelope applied on top of a Pattern at compile time. Fully independent of the
- * pattern itself -- any pattern can be compiled with or without fade, no authoring changes needed.
- *
- * @param fadeInFraction   Fraction (0.0-1.0) of total duration over which "on" events ramp
- *                         up from near-zero to full velocity. 0f disables fade-in.
- * @param fadeOutFraction  Fraction (0.0-1.0) of total duration, counted from the end, over
- *                         which "on" events ramp down toward zero. 0f disables fade-out.
- */
+/** Fade envelope applied on top of a Pattern at compile time. Fully independent of the */
 data class FadeEnvelope(
 	val fadeInFraction: Float = 0f,
 	val fadeOutFraction: Float = 0f,

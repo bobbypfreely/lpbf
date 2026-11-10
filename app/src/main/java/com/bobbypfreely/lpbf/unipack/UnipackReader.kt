@@ -17,17 +17,7 @@ data class UnipackInfo(
 	val website: String?,
 )
 
-/**
- * One keySound line, already converted to LPBF's 0-indexed ButtonRef.
- *
- * loop (Unipad semantics, NOT adjusted):
- *   0 = play only while held
- *   1 = play once (also the default when the field is omitted on disk)
- *   N = play N times
- *
- * wormhole: 0-indexed target chain, or -1 if none.
- *   On disk a positive integer is the 1-based chain to jump to; we store chain-1.
- */
+/** One keySound line, already converted to LPBF's 0-indexed ButtonRef. */
 data class UnipackKeySoundEntry(
 	val button: ButtonRef,
 	val soundRelativePath: String,
@@ -48,20 +38,7 @@ data class UnipackReadResult(
 	val warnings: List<String>,
 )
 
-/**
- * Reads a Unipack zip/folder -- format taken from Unipad's own UniPackFolder.kt so
- * anything read here stays compatible with real Unipad/Launchpad hardware.
- *
- * keySound line on disk (1-indexed):
- *   chain  x  y  soundFileName  [loop]  [wormhole]
- *
- * Coordinate system:
- *   x = vertical (row), y = horizontal (column) -- same as Unipad docs.
- *   Converted to 0-indexed ButtonRef(chain, x, y) here.
- *
- * Same chain/x/y MAY repeat across lines -- Unipad queues those as multi-hit;
- * LPBF imports each line as its own segment stacked on that pad.
- */
+/** Reads a Unipack zip/folder -- format taken from Unipad's own UniPackFolder.kt so */
 object UnipackReader {
 
 	fun extractZip(zipFile: File, targetDir: File) {

@@ -9,11 +9,7 @@ import com.bobbypfreely.lpbf.manager.LaunchpadColor
 import com.bobbypfreely.lpbf.midi.MidiConnection
 import com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
 
-/**
- * Plays a light pattern on the main grid + MIDI driver.
- * Note: current policy still clears previous pattern when a new one starts
- * (audio is polyphonic; lights can be upgraded the same way later).
- */
+/** Plays a light pattern on the main grid + MIDI driver. */
 class LightModuleImpl(
 	private val grid: () -> VirtualLaunchpadGridView?,
 	private val isLightsAuthoring: () -> Boolean = { false },

@@ -24,13 +24,7 @@ import com.bobbypfreely.lpbf.manager.LaunchpadColor
 import com.bobbypfreely.lpbf.midi.MidiConnection
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
 
-/**
- * Lightshow authoring in the LED drawer.
- * - No bottom time/velocity strip — edit happens in the Events list.
- * - Tap an event to select its time group; pick a color → prompt to set velocity
- *   for all pads on at that same start time (not the whole clip).
- * - Long-press an event to remove it. Tap main grid to place at selected time.
- */
+/** Lightshow authoring in the LED drawer. */
 class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 
 	private val viewModel: ProjectViewModel by activityViewModels()
@@ -371,7 +365,7 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		audioPreview = null
 	}
 
-	/** Run the on-device Lights Bot on the current prompt and apply to selected cut. */
+	/** Run the pattern generator on the current prompt and apply to selected cut. */
 	private fun runLightsBot() {
 		val prompt = botPrompt.text?.toString()?.trim().orEmpty()
 		if (prompt.isEmpty()) {
@@ -380,11 +374,11 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 		}
 		val segmentIndex = viewModel.selectedLightshowSegment.value
 		if (segmentIndex == null) {
-			statusText.text = "Select a cut first, then run the bot."
+			statusText.text = "Select a cut first."
 			return
 		}
 
-		statusText.text = "Bot thinking…"
+		statusText.text = "Building pattern…"
 
 		val result = LightsBot.run(
 			prompt = prompt,
@@ -393,7 +387,7 @@ class LightshowFragment : Fragment(R.layout.fragment_lightshow) {
 			context = requireContext().applicationContext,
 		)
 		if (result == null) {
-			statusText.text = "Bot: nothing to apply."
+			statusText.text = "Nothing to apply."
 			return
 		}
 

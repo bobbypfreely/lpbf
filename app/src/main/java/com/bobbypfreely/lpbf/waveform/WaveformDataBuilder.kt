@@ -12,13 +12,7 @@ data class FrameGainData(
 	val samplesPerFrame: Int,
 )
 
-/**
- * Computes waveform gain values directly from our own decoded PCM, replacing Ringdroid's
- * SoundFile decode step entirely (we already have PCM via AudioDecoder). The actual gain
- * algorithm itself IS ported from Ringdroid's SoundFile.java: split into fixed-size blocks
- * (1024 samples), take the max per-block amplitude (averaged across channels), sqrt it for
- * perceptual scaling. WaveformView's own zoom/smoothing pipeline handles the rest.
- */
+/** Computes waveform gain values directly from our own decoded PCM, replacing Ringdroid's */
 object WaveformDataBuilder {
 
 	const val SAMPLES_PER_FRAME = 1024

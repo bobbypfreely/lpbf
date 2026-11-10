@@ -5,15 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/**
- * Opt-in “notes for the bot”.
- *
- * When the user agrees, a saved pattern can be written here with tags /
- * a short description. [LightsBot] checks this library before falling
- * back to built-in primitives.
- *
- * Storage: filesDir/bot_notes/<sanitized_name>.json
- */
+/** Saved pattern notes the generator can match. */
 object BotNoteStore {
 
 	data class Note(
@@ -24,7 +16,7 @@ object BotNoteStore {
 	)
 
 	private fun dir(context: Context): File =
-		File(context.applicationContext.filesDir, "bot_notes").also { it.mkdirs() }
+		File(context.applicationContext.filesDir, "pattern_notes").also { it.mkdirs() }
 
 	private fun sanitize(name: String): String =
 		name.trim().lowercase().replace(Regex("[^a-z0-9_\\-]+"), "_").take(64)

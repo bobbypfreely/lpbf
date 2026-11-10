@@ -3,15 +3,7 @@ package com.bobbypfreely.lpbf.lightshow
 import android.os.Handler
 import android.os.Looper
 
-/**
- * Mini Heaven-style LED scheduler for LPBF preview.
- *
- * - schedule(delayMs, owner, job)
- * - cancelAll(owner) so re-trigger / stop doesn't leave stale pad lights
- * - Runs on main Handler (UI + MIDI safe on Android)
- *
- * Not a port of Amethyst Heaven — same *idea*: timed jobs + owner cancel.
- */
+/** Timed pad updates for lightshow preview. */
 class LightScheduler(
 	private val handler: Handler = Handler(Looper.getMainLooper()),
 ) {

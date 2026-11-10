@@ -6,14 +6,7 @@ import android.media.MediaFormat
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
-/**
- * Decodes a full audio file (any format MediaCodec supports - mp3, aac, wav, etc.)
- * into raw 16-bit PCM held in memory, via MediaExtractor + MediaCodec.
- *
- * NOTE: standard Android decode boilerplate, but written without an Android runtime
- * available to actually run it. Needs real-device verification before trusting it,
- * particularly the end-of-stream draining logic and output format timing.
- */
+/** Decodes a full audio file (any format MediaCodec supports - mp3, aac, wav, etc.) */
 object AudioDecoder {
 
 	/** Decodes from a content Uri (what a SAF file picker returns) via a ParcelFileDescriptor. */

@@ -9,12 +9,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import java.io.File
 
-/**
- * Wraps ExoPlayer for Mark/Cut + pad preview. Created/used on main thread only.
- *
- * handleAudioFocus=false so multiple players (waveform + PadVoicePool) never kill each other.
- * After STATE_ENDED / source errors we re-prepare so Play works again without a full reload.
- */
+/** Wraps ExoPlayer for Mark/Cut + pad preview. Created/used on main thread only. */
 class ExoPlaybackController(context: Context) {
 
 	private val player = ExoPlayer.Builder(context.applicationContext).build()

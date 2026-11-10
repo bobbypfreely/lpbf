@@ -2,42 +2,14 @@ package com.bobbypfreely.lpbf.marking
 
 import com.bobbypfreely.lpbf.lightshow.Pattern
 
-/**
- * Manages the full lifecycle of cutting one source track into ordered Clips:
- *   1. Live tap-marking (recordMark) while playing the track
- *   2. Ripple-edit fine-tuning (rippleMoveMark) and re-mapping (reassignButton)
- *   3. Locking it all in (splice)
- *
- * Marks are stored as plain millisecond positions, index 0 is always a fixed
- * mark at 0 (the track's start) and is never itself movable or removable.
- * Segment N is the gap between marks[N] and marks[N+1]; segmentButtons,
- * segmentPatterns, segmentLoops and segmentWormholes are parallel lists so a
- * segment's button, lightshow, loop and wormhole are each independent of the
- * marks that bound it.
- *
- * Live mark-while-playing is unchanged: recordMark / dropMark still create a
- * segment with button=null, loop=1 (play once), wormhole=-1. Mapping can happen
- * on the fly later (or via Place / hybrid) without selecting after the first cut.
- *
- * Nothing here touches actual audio or LED compilation -- this only tracks
- * timestamps, button assignments, loop/wormhole, and (duration-agnostic) light
- * Patterns. Real PCM slicing and keyLED event compilation both happen downstream
- * once splice() returns.
- */
+/** Manages the full lifecycle of cutting one source track into ordered Clips: */
 class MarkingSession(private val trackDurationMs: Int) {
 
 	companion object {
-		/**
-		 * No hard composer cap. UniPad devices may still choke on very long samples
-		 * (classic SoundPool ~6s); export still works. Kept as a huge sentinel so
-		 * old ExceedsCap call sites compile but never trip in normal use.
-		 */
+		/** No hard composer cap. UniPad devices may still choke on very long samples */
 		const val MAX_SEGMENT_MS = Int.MAX_VALUE / 4
 
-		/** Rebuilds a session from previously-saved marks/buttons/patterns (project resume
-		 * or Unipack import). Bypasses recordMark()'s live-input validation since this
-		 * data was already valid when it was saved.
-		 * [loops] / [wormholes] default so old call sites keep working. */
+		/** /** Rebuilds a session from previously-saved marks/buttons/patterns (project resume */
 		fun restore(
 			trackDurationMs: Int,
 			marks: List<Int>,
@@ -116,12 +88,7 @@ class MarkingSession(private val trackDurationMs: Int) {
 
 	// ---- Phase 1: live tap-marking ----------------------------------------
 
-	/**
-	 * Drops a mark at [atMs], creating a new segment from the previous mark to this one,
-	 * tentatively linked to [button]. Live mark-while-playing passes button=null;
-	 * mapping happens later (or on the fly via Place / hybrid). Defaults: loop=1,
-	 * wormhole=-1 so behaviour matches a normal Unipad one-shot hit.
-	 */
+	/** Drops a mark at atMs, creating a new segment from the previous mark to this one, */
 	fun recordMark(atMs: Int, button: ButtonRef?, loop: Int = 1, wormhole: Int = -1): RecordResult {
 		checkNotSpliced()
 		val prev = marks.last()

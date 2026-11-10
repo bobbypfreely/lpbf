@@ -14,28 +14,7 @@ import com.bobbypfreely.lpbf.R
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
 import com.bobbypfreely.lpbf.waveform.ExoPlaybackController
 
-/**
- * Place: assigns each provisional segment (from Mark and Cut) to a Launchpad button,
- * on one of 8 chains (a real Launchpad's side buttons page between 8 separate 64-pad
- * grids), and lets you preview the mapping before exporting.
- *
- * Three modes, cycled by placeModeToggle:
- *  - EDIT (default): tapping a pad assigns the next unassigned cut to it, auto-advancing
- *    down the ordered list. Tapping an already-assigned pad stacks another cut onto it
- *    (multi-trigger cycling) -- MarkingSession has no unique-button constraint.
- *  - PLAY: tapping a pad previews whatever's mapped to it instead of assigning anything.
- *    Repeated presses on a stacked pad cycle through each cut mapped there.
- *  - HYBRID: like EDIT, but immediately previews the cut you just placed so you hear it
- *    without a second tap. Falls back to PLAY-style cycling once everything's assigned.
- *
- * Both physical Launchpad presses and on-screen grid taps are routed through the exact
- * same ProjectViewModel.onPadDown/onPadUp so mode logic only has to live in one place.
- * The chain selector mirrors this: a real Launchpad's physical chain buttons sync here
- * automatically via ProjectViewModel.onChainTouch, same as the tap buttons below do.
- *
- * Long-pressing a cut in the list jumps back to Mark & Cut with that mark highlighted,
- * for quick fine-adjustment without a dedicated screen.
- */
+/** Place: assigns each provisional segment (from Mark and Cut) to a Launchpad button, */
 class PlaceFragment : Fragment(R.layout.fragment_place) {
 
 	private val viewModel: ProjectViewModel by activityViewModels()
@@ -170,10 +149,7 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 		}, durationMs)
 	}
 
-	/** The real "play with music and lightshow" piece: schedules this cut's Pattern
-	 * keyframes as real Handler events against the grid, timed against the cut's own
-	 * real duration -- same clock playPreview() uses for the audio, so both actually
-	 * play together instead of just both starting at roughly the same moment. */
+	/** /** The real "play with music and lightshow" piece: schedules this cut's Pattern */
 	private fun playLightshowLive(pattern: com.bobbypfreely.lpbf.lightshow.Pattern?, durationMs: Int) {
 		if (pattern == null || durationMs <= 0) return
 		pattern.keyframes.forEach { kf ->
@@ -190,9 +166,7 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 		}
 	}
 
-	/** Rough palette approximation for a raw velocity when no explicit color was given
-	 * -- good enough for a live preview, not a claim to match the real Launchpad
-	 * palette exactly. */
+	/** /** Rough palette approximation for a raw velocity when no explicit color was given */
 	private fun velocityToColor(velocity: Int): Int {
 		val hue = (velocity.coerceIn(0, 127) / 127f) * 300f
 		return Color.HSVToColor(floatArrayOf(hue, 0.85f, 1f))

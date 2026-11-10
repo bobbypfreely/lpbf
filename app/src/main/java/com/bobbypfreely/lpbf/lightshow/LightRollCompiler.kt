@@ -1,11 +1,6 @@
 package com.bobbypfreely.lpbf.lightshow
 
-/**
- * Compiles [LightRoll] / [LightNote] → duration-agnostic [Pattern] (t in 0..1).
- *
- * Gradients become stepped on-keyframes (velocity changes); solid notes become
- * single on + off. Same export path as BuiltInPatterns / LightsBot.
- */
+/** Compiles LightRoll / LightNote → normalized-time Pattern (t in 0..1). */
 object LightRollCompiler {
 
 	/** Frames per second used when expanding gradients into keyframes. */

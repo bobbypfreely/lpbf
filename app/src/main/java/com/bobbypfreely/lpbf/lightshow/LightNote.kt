@@ -1,14 +1,6 @@
 package com.bobbypfreely.lpbf.lightshow
 
-/**
- * Piano-roll style light note for LPBF.
- *
- * One note = one pad lit for a time range, optionally with a color gradient.
- * Compiles down to existing [Pattern] / [Keyframe] so export + bot stay compatible.
- *
- * Coordinates: 0-based grid (same as Keyframe / VirtualLaunchpadGridView).
- * Times: milliseconds within the cut (absolute to the segment).
- */
+/** Pad note with start/end times and optional gradient. */
 data class LightNote(
 	val id: String,
 	val x: Int,
