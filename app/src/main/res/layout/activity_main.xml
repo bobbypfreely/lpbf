@@ -25,127 +25,145 @@
 			android:gravity="center_horizontal">
 
 			<LinearLayout
-				android:id="@+id/modeBar"
 				android:layout_width="match_parent"
 				android:layout_height="40dp"
 				android:orientation="horizontal"
-				android:gravity="center_vertical"
-				android:paddingStart="4dp"
-				android:paddingEnd="4dp">
+				android:gravity="center_vertical">
+
 				<TextView
 					android:id="@+id/modeLabel"
-					android:layout_width="0dp"
+					android:layout_width="wrap_content"
 					android:layout_height="wrap_content"
-					android:layout_weight="1"
+					android:minWidth="48dp"
+					android:paddingStart="6dp"
+					android:paddingEnd="4dp"
 					android:text="PLAY"
 					android:textColor="#00ADB5"
 					android:textSize="13sp"
 					android:textStyle="bold"
 					android:letterSpacing="0.06" />
-				<TextView
-					android:id="@+id/btnTopPlay"
-					android:layout_width="44dp"
-					android:layout_height="36dp"
-					android:gravity="center"
-					android:text="PLAY"
-					android:textColor="#00ADB5"
-					android:textSize="11sp"
-					android:textStyle="bold"
-					android:contentDescription="Play mode"
-					android:background="?attr/selectableItemBackgroundBorderless"
-					android:clickable="true"
-					android:focusable="true" />
-				<TextView
-					android:id="@+id/btnTopMap"
-					android:layout_width="48dp"
-					android:layout_height="36dp"
-					android:gravity="center"
-					android:text="SOUND"
-					android:textColor="#81C784"
-					android:textSize="11sp"
-					android:textStyle="bold"
-					android:contentDescription="Open sound map drawer"
-					android:background="?attr/selectableItemBackgroundBorderless"
-					android:clickable="true"
-					android:focusable="true" />
-				<TextView
-					android:id="@+id/btnTopLights"
-					android:layout_width="40dp"
-					android:layout_height="36dp"
-					android:gravity="center"
-					android:text="LED"
-					android:textColor="#B39DDB"
-					android:textSize="11sp"
-					android:textStyle="bold"
-					android:contentDescription="Open lights drawer"
-					android:background="?attr/selectableItemBackgroundBorderless"
-					android:clickable="true"
-					android:focusable="true" />
-				<TextView
-					android:id="@+id/btnTopWave"
-					android:layout_width="48dp"
-					android:layout_height="36dp"
-					android:gravity="center"
-					android:text="WAVE"
-					android:textColor="#FF8A80"
-					android:textSize="11sp"
-					android:textStyle="bold"
-					android:contentDescription="Open waveform drawer"
-					android:background="?attr/selectableItemBackgroundBorderless"
-					android:clickable="true"
-					android:focusable="true" />
-				<TextView
-					android:id="@+id/btnAutoPlayToggle"
-					android:layout_width="44dp"
-					android:layout_height="36dp"
-					android:gravity="center"
-					android:text="AP ON"
-					android:textColor="#81C784"
-					android:textSize="10sp"
-					android:textStyle="bold"
-					android:contentDescription="Toggle AutoPlay labels"
-					android:background="?attr/selectableItemBackgroundBorderless"
-					android:clickable="true"
-					android:focusable="true" />
-				<TextView
-					android:id="@+id/btnGuide"
-					android:layout_width="48dp"
-					android:layout_height="36dp"
-					android:gravity="center"
-					android:text="GUIDE"
-					android:textColor="#8888AA"
-					android:textSize="10sp"
-					android:textStyle="bold"
-					android:contentDescription="Guide mode highlights next pad"
-					android:background="?attr/selectableItemBackgroundBorderless"
-					android:clickable="true"
-					android:focusable="true" />
-				<TextView
-					android:id="@+id/btnModeHybrid"
-					android:layout_width="48dp"
-					android:layout_height="36dp"
-					android:gravity="center"
-					android:text="HYBRID"
-					android:textColor="#FFB74D"
-					android:textSize="10sp"
-					android:textStyle="bold"
-					android:contentDescription="Hybrid mode"
-					android:background="?attr/selectableItemBackgroundBorderless"
-					android:clickable="true"
-					android:focusable="true" />
-				<TextView
-					android:id="@+id/btnDonate"
-					android:layout_width="36dp"
-					android:layout_height="36dp"
-					android:gravity="center"
-					android:text="TIP"
-					android:textColor="#F48FB1"
-					android:textSize="10sp"
-					android:textStyle="bold"
-					android:contentDescription="Optional tip / donate"
-					android:background="?attr/selectableItemBackgroundBorderless"
-					android:clickable="true"
-					android:focusable="true" />
+
+				<HorizontalScrollView
+					android:layout_width="0dp"
+					android:layout_height="match_parent"
+					android:layout_weight="1"
+					android:scrollbars="none"
+					android:fillViewport="false">
+
+					<LinearLayout
+						android:id="@+id/modeBar"
+						android:layout_width="wrap_content"
+						android:layout_height="match_parent"
+						android:orientation="horizontal"
+						android:gravity="center_vertical"
+						android:paddingEnd="4dp">
+
+						<TextView
+							android:id="@+id/btnTopPlay"
+							android:layout_width="44dp"
+							android:layout_height="36dp"
+							android:gravity="center"
+							android:text="PLAY"
+							android:textColor="#00ADB5"
+							android:textSize="11sp"
+							android:textStyle="bold"
+							android:contentDescription="Play mode"
+							android:background="?attr/selectableItemBackgroundBorderless"
+							android:clickable="true"
+							android:focusable="true" />
+						<TextView
+							android:id="@+id/btnTopMap"
+							android:layout_width="48dp"
+							android:layout_height="36dp"
+							android:gravity="center"
+							android:text="SOUND"
+							android:textColor="#81C784"
+							android:textSize="11sp"
+							android:textStyle="bold"
+							android:contentDescription="Open sound map drawer"
+							android:background="?attr/selectableItemBackgroundBorderless"
+							android:clickable="true"
+							android:focusable="true" />
+						<TextView
+							android:id="@+id/btnTopLights"
+							android:layout_width="40dp"
+							android:layout_height="36dp"
+							android:gravity="center"
+							android:text="LED"
+							android:textColor="#B39DDB"
+							android:textSize="11sp"
+							android:textStyle="bold"
+							android:contentDescription="Open lights drawer"
+							android:background="?attr/selectableItemBackgroundBorderless"
+							android:clickable="true"
+							android:focusable="true" />
+						<TextView
+							android:id="@+id/btnTopWave"
+							android:layout_width="48dp"
+							android:layout_height="36dp"
+							android:gravity="center"
+							android:text="WAVE"
+							android:textColor="#FF8A80"
+							android:textSize="11sp"
+							android:textStyle="bold"
+							android:contentDescription="Open waveform drawer"
+							android:background="?attr/selectableItemBackgroundBorderless"
+							android:clickable="true"
+							android:focusable="true" />
+						<TextView
+							android:id="@+id/btnAutoPlayToggle"
+							android:layout_width="44dp"
+							android:layout_height="36dp"
+							android:gravity="center"
+							android:text="AP ON"
+							android:textColor="#81C784"
+							android:textSize="10sp"
+							android:textStyle="bold"
+							android:contentDescription="Toggle AutoPlay labels"
+							android:background="?attr/selectableItemBackgroundBorderless"
+							android:clickable="true"
+							android:focusable="true" />
+						<TextView
+							android:id="@+id/btnGuide"
+							android:layout_width="48dp"
+							android:layout_height="36dp"
+							android:gravity="center"
+							android:text="GUIDE"
+							android:textColor="#8888AA"
+							android:textSize="10sp"
+							android:textStyle="bold"
+							android:contentDescription="Guide mode highlights next pad"
+							android:background="?attr/selectableItemBackgroundBorderless"
+							android:clickable="true"
+							android:focusable="true" />
+						<TextView
+							android:id="@+id/btnModeHybrid"
+							android:layout_width="48dp"
+							android:layout_height="36dp"
+							android:gravity="center"
+							android:text="HYBRID"
+							android:textColor="#FFB74D"
+							android:textSize="10sp"
+							android:textStyle="bold"
+							android:contentDescription="Hybrid mode"
+							android:background="?attr/selectableItemBackgroundBorderless"
+							android:clickable="true"
+							android:focusable="true" />
+						<TextView
+							android:id="@+id/btnDonate"
+							android:layout_width="36dp"
+							android:layout_height="36dp"
+							android:gravity="center"
+							android:text="TIP"
+							android:textColor="#F48FB1"
+							android:textSize="10sp"
+							android:textStyle="bold"
+							android:contentDescription="Optional tip / donate"
+							android:background="?attr/selectableItemBackgroundBorderless"
+							android:clickable="true"
+							android:focusable="true" />
+					</LinearLayout>
+				</HorizontalScrollView>
 			</LinearLayout>
 
 			<com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
@@ -200,7 +218,7 @@
 	<LinearLayout
 		android:id="@+id/bottomDrawer"
 		android:layout_width="match_parent"
-		android:layout_height="480dp"
+		android:layout_height="340dp"
 		android:layout_gravity="bottom"
 		android:orientation="vertical"
 		android:background="#12121C"
@@ -217,8 +235,6 @@
 		<FrameLayout android:id="@+id/waveformPlaceholder" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:background="#0F0F1A" />
 	</LinearLayout>
 
-
-	<!-- Presets strip: shown when KeyLED / LIGHTS is open (right of centered grid). -->
 	<LinearLayout
 		android:id="@+id/presetsPanel"
 		android:layout_width="132dp"
