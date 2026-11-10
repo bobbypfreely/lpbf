@@ -15,7 +15,8 @@ android {
 		versionName = "0.2.1-beta"
 	}
 
-	// Same keystore for debug + release so CI builds an installable APK for sideload.
+	// Same keystore for debug + release so CI and phones get a stable, installable APK.
+	// (Private beta / sideload — not a Play Store upload key.)
 	signingConfigs {
 		create("appSign") {
 			storeFile = file("lpbf-debug.keystore")
