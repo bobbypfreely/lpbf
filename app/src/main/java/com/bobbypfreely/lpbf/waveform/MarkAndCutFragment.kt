@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
+import android.widget.PopupMenu
 import android.widget.FrameLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -110,18 +111,8 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		markOverlay.waveformView = waveformView
 		waveformView.setListener(this)
 
-		view.findViewById<Button>(R.id.importButton).setOnClickListener {
-			pickAudio.launch(arrayOf("audio/*"))
-		}
-		view.findViewById<Button>(R.id.loadProjectButton).setOnClickListener { showLoadProjectDialog() }
-		view.findViewById<Button>(R.id.importPreCutButton).setOnClickListener {
-			pickPreCutTracks.launch(arrayOf("audio/*"))
-		}
-		view.findViewById<Button>(R.id.importUnipackButton).setOnClickListener {
-			pickUnipack.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*"))
-		}
-		view.findViewById<Button>(R.id.importUnipackFolderButton).setOnClickListener {
-			pickUnipackFolder.launch(null)
+		view.findViewById<Button>(R.id.menuButton).setOnClickListener { anchor ->
+			showMainMenu(anchor)
 		}
 		view.findViewById<Button>(R.id.zoomInButton).setOnClickListener {
 			waveformView.zoomIn(); waveformView.invalidate(); refreshMarkers()
@@ -662,13 +653,121 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 	}
 
+
+	/** Match keySound path to a real file under sounds/ (missing/wrong extension common in old packs). */
+	private fun resolveSoundFile(soundsDir: java.io.File, relativePath: String): java.io.File? {
+		val direct = java.io.File(soundsDir, relativePath)
+		if (direct.isFile) return direct
+		val baseName = java.io.File(relativePath).name
+		val parentRel = java.io.File(relativePath).parent
+		val searchDir = if (parentRel != null) java.io.File(soundsDir, parentRel) else soundsDir
+		if (!searchDir.isDirectory) return null
+		val stem = baseName.substringBeforeLast('.', baseName).lowercase()
+		val candidates = searchDir.listFiles()?.filter { it.isFile } ?: return null
+		// exact name ignore case
+		candidates.firstOrNull { it.name.equals(baseName, ignoreCase = true) }?.let { return it }
+		// same stem, any extension
+		candidates.firstOrNull {
+			it.nameWithoutExtension.equals(stem, ignoreCase = true)
+		}?.let { return it }
+		// file has no extension but keySound has one (or opposite)
+		candidates.firstOrNull {
+			it.name.lowercase() == stem || it.nameWithoutExtension.lowercase() == stem
+		}?.let { return it }
+		return null
+	}
+
+	/**
+	 * If keySound names files with .wav/.mp3 but disk has bare names (or wrong ext),
+	 * return list of (foundFile -> desired relative path under sounds/).
+	 */
+	private fun planSoundNameFixes(
+		soundsDir: java.io.File,
+		entries: List<com.bobbypfreely.lpbf.unipack.UnipackKeySoundEntry>,
+	): List<Pair<java.io.File, String>> {
+		val fixes = mutableListOf<Pair<java.io.File, String>>()
+		val seen = mutableSetOf<String>()
+		for (entry in entries) {
+			val desired = entry.soundRelativePath.replace('\\', '/')
+			val desiredFile = java.io.File(soundsDir, desired)
+			if (desiredFile.isFile) continue
+			val found = resolveSoundFile(soundsDir, desired) ?: continue
+			if (found.absolutePath == desiredFile.absolutePath) continue
+			val key = found.absolutePath
+			if (!seen.add(key)) continue
+			// Only auto-fix when it's clearly an extension / case issue
+			val sameStem = found.nameWithoutExtension.equals(
+				java.io.File(desired).nameWithoutExtension,
+				ignoreCase = true,
+			)
+			if (sameStem) fixes.add(found to desired)
+		}
+		return fixes
+	}
+
+	private fun applySoundNameFixes(soundsDir: java.io.File, fixes: List<Pair<java.io.File, String>>): Int {
+		var n = 0
+		for ((from, desiredRel) in fixes) {
+			val dest = java.io.File(soundsDir, desiredRel)
+			dest.parentFile?.mkdirs()
+			if (dest.exists()) continue
+			try {
+				if (from.renameTo(dest)) {
+					n++
+				} else {
+					from.copyTo(dest, overwrite = false)
+					if (dest.isFile) {
+						from.delete()
+						n++
+					}
+				}
+			} catch (e: Exception) {
+				android.util.Log.w("MarkAndCutFragment", "Could not fix ${from.name} -> $desiredRel", e)
+			}
+		}
+		return n
+	}
+
 	private fun importFromExtractedDir(context: android.content.Context, extractDir: java.io.File) {
 		val read = com.bobbypfreely.lpbf.unipack.UnipackReader.read(extractDir)
+		val fixes = planSoundNameFixes(read.soundsDir, read.entries)
+		if (fixes.isNotEmpty()) {
+			val sample = fixes.take(6).joinToString("\n") { (from, to) ->
+				"${from.name}  →  ${java.io.File(to).name}"
+			}
+			val more = if (fixes.size > 6) "\n…and ${fixes.size - 6} more" else ""
+			val latch = java.util.concurrent.CountDownLatch(1)
+			var applyFixes = false
+			activity?.runOnUiThread {
+				android.app.AlertDialog.Builder(requireContext())
+					.setTitle("Fix sound file names?")
+					.setMessage(
+						"${fixes.size} file(s) don't match keySound (often missing .wav / .mp3).\n" +
+							"Rename them to match keySound?\n\n$sample$more"
+					)
+					.setPositiveButton("Fix") { _, _ -> applyFixes = true; latch.countDown() }
+					.setNegativeButton("Skip") { _, _ -> latch.countDown() }
+					.setOnCancelListener { latch.countDown() }
+					.show()
+			} ?: latch.countDown()
+			try { latch.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Exception) {}
+			if (applyFixes) {
+				val n = applySoundNameFixes(read.soundsDir, fixes)
+				activity?.runOnUiThread {
+					statusText.text = "Renamed $n sound file(s) to match keySound."
+				}
+			}
+		}
 
 		val occurrenceCount = mutableMapOf<com.bobbypfreely.lpbf.marking.ButtonRef, Int>()
 		var unparseableKeyLedCount = 0
-		val sources = read.entries.map { entry ->
-			val soundFile = java.io.File(read.soundsDir, entry.soundRelativePath)
+		val sources = read.entries.mapNotNull { entry ->
+			val soundFile = resolveSoundFile(read.soundsDir, entry.soundRelativePath)
+				?: java.io.File(read.soundsDir, entry.soundRelativePath)
+			if (!soundFile.isFile) {
+				android.util.Log.w("MarkAndCutFragment", "Missing sound: ${entry.soundRelativePath}")
+				return@mapNotNull null
+			}
 			val occurrence = occurrenceCount.getOrDefault(entry.button, 0)
 			occurrenceCount[entry.button] = occurrence + 1
 
