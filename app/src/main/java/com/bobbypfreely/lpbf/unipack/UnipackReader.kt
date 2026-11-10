@@ -67,7 +67,6 @@ object UnipackReader {
 		}
 
 		val infoFile = actualRoot.listFiles()?.firstOrNull { it.isFile && it.name.equals("info", ignoreCase = true) }
-			?: throw IllegalArgumentException("Not a Unipack -- 'info' file missing")
 		val keySoundFile = actualRoot.listFiles()?.firstOrNull { it.isFile && it.name.equals("keySound", ignoreCase = true) }
 			?: throw IllegalArgumentException("Not a Unipack -- 'keySound' file missing")
 		val soundsDir = actualRoot.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("sounds", ignoreCase = true) }
@@ -75,39 +74,42 @@ object UnipackReader {
 		val keyLedDir = actualRoot.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("keyLed", ignoreCase = true) }
 		val autoPlayFile = actualRoot.listFiles()?.firstOrNull { it.isFile && it.name.equals("autoPlay", ignoreCase = true) }
 
-		var title = ""
-		var producerName = ""
-		var buttonX = 0
-		var buttonY = 0
-		var chainCount = 0
+		var title = actualRoot.name.ifBlank { "Untitled" }
+		var producerName = "Unknown"
+		var buttonX = 8
+		var buttonY = 8
+		var chainCount = 8
 		var squareButton = true
 		var website: String? = null
+		val warnings = mutableListOf<String>()
 
-		BufferedReader(InputStreamReader(infoFile.inputStream())).useLines { lines ->
-			lines.forEach { raw ->
-				val s = raw.trim()
-				if (s.isEmpty()) return@forEach
-				val split = s.split("=", limit = 2)
-				if (split.size < 2) return@forEach
-				val key = split[0].trim()
-				val value = split[1].trim()
-				when (key) {
-					"title" -> title = value
-					"producerName" -> producerName = value
-					"buttonX" -> buttonX = value.toIntOrNull() ?: 0
-					"buttonY" -> buttonY = value.toIntOrNull() ?: 0
-					"chain" -> chainCount = value.toIntOrNull() ?: 0
-					"squareButton" -> squareButton = value == "true"
-					"website" -> website = value
+		if (infoFile == null) {
+			warnings.add("info file missing — defaults used (title/producer/grid); export will write a new info")
+		} else {
+			BufferedReader(InputStreamReader(infoFile.inputStream())).useLines { lines ->
+				lines.forEach { raw ->
+					val s = raw.trim()
+					if (s.isEmpty()) return@forEach
+					val split = s.split("=", limit = 2)
+					if (split.size < 2) return@forEach
+					val key = split[0].trim()
+					val value = split[1].trim()
+					when (key) {
+						"title" -> title = value
+						"producerName" -> producerName = value
+						"buttonX" -> buttonX = value.toIntOrNull() ?: buttonX
+						"buttonY" -> buttonY = value.toIntOrNull() ?: buttonY
+						"chain" -> chainCount = value.toIntOrNull() ?: chainCount
+						"squareButton" -> squareButton = value == "true"
+						"website" -> website = value
+					}
 				}
 			}
+			if (title.isEmpty()) warnings.add("info: title missing")
+			if (producerName.isEmpty()) warnings.add("info: producerName missing")
+			if (buttonX == 0 || buttonY == 0) warnings.add("info: buttonX/buttonY missing")
+			if (chainCount !in 1..24) warnings.add("info: chain count ($chainCount) out of expected 1-24 range")
 		}
-
-		val warnings = mutableListOf<String>()
-		if (title.isEmpty()) warnings.add("info: title missing")
-		if (producerName.isEmpty()) warnings.add("info: producerName missing")
-		if (buttonX == 0 || buttonY == 0) warnings.add("info: buttonX/buttonY missing")
-		if (chainCount !in 1..24) warnings.add("info: chain count ($chainCount) out of expected 1-24 range")
 
 		val entries = mutableListOf<UnipackKeySoundEntry>()
 		BufferedReader(InputStreamReader(keySoundFile.inputStream())).useLines { lines ->
@@ -144,6 +146,14 @@ object UnipackReader {
 				}
 			}
 		}
+
+		if (entries.isNotEmpty()) {
+			val maxChain = entries.maxOf { it.button.chain } + 1
+			if (chainCount < maxChain) chainCount = maxChain.coerceIn(1, 24)
+		}
+		if (buttonX <= 0) buttonX = 8
+		if (buttonY <= 0) buttonY = 8
+		if (chainCount !in 1..24) chainCount = 8
 
 		val autoPlayProgram = try {
 			autoPlayFile?.let {
