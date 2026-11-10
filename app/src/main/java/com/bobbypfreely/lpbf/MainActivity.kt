@@ -22,7 +22,10 @@ import com.bobbypfreely.lpbf.ui.VirtualLaunchpadGridView
 import com.bobbypfreely.lpbf.viewmodel.ProjectViewModel
 import com.bobbypfreely.lpbf.waveform.MarkAndCutFragment
 
-/** Shell: top bar opens drawers. AP plays autoPlay or cuts in order. */
+/**
+ * Shell with no side/bottom pills. Top bar first-press opens drawers.
+ * AP plays autoPlay file sequence, or all cuts in mark order when none.
+ */
 class MainActivity : AppCompatActivity() {
 
 	private lateinit var viewModel: ProjectViewModel
@@ -95,35 +98,494 @@ class MainActivity : AppCompatActivity() {
 		}
 		viewModel.isPlaceTabActive = true
 		viewModel.enterUiMode(ProjectViewModel.UiMode.PLAY)
-		// NOTE: remainder restored from last good commit via Termux if this stub is incomplete
-		wireUi()
-		updateCenterInsets()
-	}
 
-	private fun wireUi() {
+		// New track/import: drop all pad ExoPlayers so the previous song does not stay in RAM.
+		viewModel.trackGeneration.observe(this) { gen ->
+			if (gen == null || gen <= 0) return@observe
+			if (!::harness.isInitialized) return@observe
+			try {
+				harness.release()
+				harness = com.bobbypfreely.lpbf.harness.LpbfHarness.assemble(
+					context = this, grid = { launchpadGrid },
+					isLightsAuthoring = { viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS },
+					onLightsBusy = { busy -> lightsPlaying = busy; if (!busy) refreshSideLists() },
+				)
+				viewModel.cachedFilePath?.let { harness.setSource(it) }
+				viewModel.logDebug("Harness reset for track gen $gen")
+			} catch (e: Exception) {
+				android.util.Log.e("MainActivity", "Harness reset failed", e)
+			}
+		}
+
 		findViewById<View?>(R.id.btnCloseLeft)?.setOnClickListener { if (leftOpen) setLeftOpen(false) }
 		findViewById<View?>(R.id.btnCloseRight)?.setOnClickListener { if (rightOpen) setRightOpen(false) }
 		findViewById<View?>(R.id.btnCloseBottom)?.setOnClickListener { if (bottomOpen) setBottomOpen(false) }
+		findViewById<View?>(R.id.btnExportUnipack)?.setOnClickListener { exportUnipack() }
+
 		findViewById<View?>(R.id.btnTopPlay)?.setOnClickListener {
+			stopAutoPlaySequence()
 			viewModel.enterUiMode(ProjectViewModel.UiMode.PLAY)
 			setLeftOpen(false); setRightOpen(false); setBottomOpen(false)
 		}
-		findViewById<View?>(R.id.btnTopMap)?.setOnClickListener { setRightOpen(true); setLeftOpen(false) }
-		findViewById<View?>(R.id.btnTopLights)?.setOnClickListener { setLeftOpen(true); setRightOpen(false) }
+		findViewById<View?>(R.id.btnTopMap)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.EDIT)
+			setRightOpen(true); setLeftOpen(false)
+		}
+		findViewById<View?>(R.id.btnTopLights)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.LIGHTS)
+			setLeftOpen(true); setRightOpen(false)
+		}
 		findViewById<View?>(R.id.btnTopWave)?.setOnClickListener { setBottomOpen(true) }
-		findViewById<View?>(R.id.btnModeMap)?.setOnClickListener {
-			viewModel.enterUiMode(ProjectViewModel.UiMode.EDIT); setRightOpen(true)
-		}
-		findViewById<View?>(R.id.btnModeLights)?.setOnClickListener {
-			viewModel.enterUiMode(ProjectViewModel.UiMode.LIGHTS); setLeftOpen(true)
-		}
 		findViewById<View?>(R.id.btnModeHybrid)?.setOnClickListener {
 			viewModel.enterUiMode(ProjectViewModel.UiMode.HYBRID)
 		}
+		findViewById<View?>(R.id.btnModeMap)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.EDIT)
+			setRightOpen(true)
+		}
+		findViewById<View?>(R.id.btnModeLights)?.setOnClickListener {
+			viewModel.enterUiMode(ProjectViewModel.UiMode.LIGHTS)
+			setLeftOpen(true)
+		}
+		findViewById<View?>(R.id.btnAutoPlayToggle)?.setOnClickListener {
+			if (autoPlayRunning) {
+				stopAutoPlaySequence()
+			} else {
+				viewModel.setAutoPlayEnabled(true)
+				startAutoPlaySequence()
+			}
+			refreshSideLists(); updateModeChrome()
+		}
+		findViewById<View?>(R.id.btnGuide)?.setOnClickListener {
+			viewModel.toggleGuideMode(); refreshSideLists(); updateModeChrome()
+		}
+		findViewById<View?>(R.id.btnDonate)?.setOnClickListener { showDonateDialog() }
+
+		viewModel.autoPlayEnabled.observe(this) { refreshSideLists(); updateModeChrome() }
+		viewModel.guideMode.observe(this) { refreshSideLists(); updateModeChrome() }
+		viewModel.segmentVersion.observe(this) { refreshSideLists() }
+		viewModel.markingSession.observe(this) { refreshSideLists() }
+		viewModel.autoPlay.observe(this) { refreshSideLists() }
+		viewModel.currentChain.observe(this) { chain ->
+			launchpadGrid.setActiveChain(chain ?: 0); refreshSideLists()
+		}
+		viewModel.previewRequest.observe(this) { req ->
+			if (req != null) {
+				if (req.pattern == null && req.x >= 0 && req.y >= 0) {
+					val flash = if (req.stackTotal > 1) "${req.stackIndex + 1}/${req.stackTotal}" else null
+					launchpadGrid.setPadLit(req.x, req.y, 0xFF00ADB5.toInt(), flash)
+					launchpadGrid.postDelayed({ if (!lightsPlaying) refreshSideLists() }, 220)
+				}
+				playPadPreview(req.startMs, req.endMs, req.pattern)
+				if (viewModel.guideMode.value == true) {
+					viewModel.advanceGuideIfMatch(req.x, req.y); refreshSideLists()
+				}
+				viewModel.clearPreviewRequest()
+			}
+		}
+		viewModel.keyLedDraft.observe(this) { text ->
+			if (text != null) {
+				ledEditor.setText(text)
+				findViewById<TextView?>(R.id.ledFolderSummary)?.text =
+					if (text.isBlank()) "(no LED patterns yet)" else "Preset keyLED (${text.lines().size} lines)"
+			}
+		}
+		viewModel.uiMode.observe(this) { mode ->
+			applyUiMode(mode)
+			showTipForMode(mode)
+			viewModel.autosave(applicationContext)
+			updateCenterInsets()
+		}
+		updateCenterInsets(); updateModeChrome()
+	}
+
+	override fun onPause() {
+		viewModel.autosave(applicationContext)
+		super.onPause()
+	}
+
+	override fun onDestroy() {
+		stopAutoPlaySequence()
+		if (::harness.isInitialized) harness.release()
+		super.onDestroy()
+	}
+
+	private fun showDonateDialog() {
+		val msg = "LPBF is free forever — no ads, no paywall.\n\n" +
+			"Optional tip keeps the lights on.\n\n" +
+			"© Bobby P. Freely · LPBF\nbobbyp.freely@gmail.com"
+		AlertDialog.Builder(this)
+			.setTitle("Support LPBF")
+			.setMessage(msg)
+			.setPositiveButton("Cash App") { _, _ ->
+				try {
+					startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cash.app/\$Mysterp")))
+				} catch (e: Exception) {
+					android.widget.Toast.makeText(this, "Cash App: \$Mysterp", android.widget.Toast.LENGTH_LONG).show()
+				}
+			}
+			.setNeutralButton("PayPal") { _, _ ->
+				try {
+					val uri = Uri.parse(
+						"https://www.paypal.com/cgi-bin/webscr?cmd=_donations" +
+							"&business=bobbyp.freely%40gmail.com&currency_code=USD&item_name=LPBF"
+					)
+					startActivity(Intent(Intent.ACTION_VIEW, uri))
+				} catch (e: Exception) {
+					android.widget.Toast.makeText(this, "PayPal: bobbyp.freely@gmail.com", android.widget.Toast.LENGTH_LONG).show()
+				}
+			}
+			.setNegativeButton("Close", null)
+			.show()
+	}
+
+	private fun showTipForMode(mode: ProjectViewModel.UiMode?) {
+		val m = mode ?: return
+		val prefs = getSharedPreferences("lpbf_tips", MODE_PRIVATE)
+		val key = "tip_" + m.name
+		if (prefs.getBoolean(key, false)) return
+		val (title, body) = when (m) {
+			ProjectViewModel.UiMode.PLAY -> "PLAY" to
+				"Clean grid. Tap mapped pads to trigger cuts + lights.\n\n" +
+				"AP plays the sequence. GUIDE highlights the next pad to hit."
+			ProjectViewModel.UiMode.EDIT -> "MAP / SOUND" to
+				"Tap pads to assign the next unmapped cut.\n\n" +
+				"Open the sound list to jump a cut into the waveform editor.\n" +
+				"Export Unipack when you're done — autosave runs in the background."
+			ProjectViewModel.UiMode.HYBRID -> "HYBRID" to
+				"Assign and preview in one tap.\n\n" +
+				"Great for building the map while hearing each cut."
+			ProjectViewModel.UiMode.LIGHTS -> "LIGHTS / LED" to
+				"Select a mapped pad, then paint a light pattern.\n\n" +
+				"Chain buttons pick hue. Patterns export into the Unipack keyLED folder."
+		}
+		AlertDialog.Builder(this)
+			.setTitle(title)
+			.setMessage(body)
+			.setPositiveButton("Got it") { _, _ ->
+				prefs.edit().putBoolean(key, true).apply()
+			}
+			.setCancelable(true)
+			.setOnCancelListener { prefs.edit().putBoolean(key, true).apply() }
+			.show()
+	}
+
+	private fun showWaveformTipIfNeeded() {
+		val prefs = getSharedPreferences("lpbf_tips", MODE_PRIVATE)
+		if (prefs.getBoolean("tip_WAVE", false)) return
+		AlertDialog.Builder(this)
+			.setTitle("Waveform")
+			.setMessage(
+				"1. Import a track\n" +
+				"2. Play, then Mark Cut Here as you go\n" +
+				"3. Map cuts onto pads (SOUND / HYBRID)\n" +
+				"4. Export Unipack for UniPad\n\n" +
+				"Autosave runs when you change tabs — Recover after a crash."
+			)
+			.setPositiveButton("Got it") { _, _ ->
+				prefs.edit().putBoolean("tip_WAVE", true).apply()
+			}
+			.setOnCancelListener { prefs.edit().putBoolean("tip_WAVE", true).apply() }
+			.show()
+	}
+
+	private fun updateModeChrome() {
+		val ap = viewModel.autoPlayEnabled.value == true
+		val guide = viewModel.guideMode.value == true
+		findViewById<TextView?>(R.id.btnAutoPlayToggle)?.apply {
+			text = when {
+				autoPlayRunning -> "STOP"
+				ap -> "AP ON"
+				else -> "AP OFF"
+			}
+			setTextColor(when {
+				autoPlayRunning -> 0xFFFF8A80.toInt()
+				ap -> 0xFF81C784.toInt()
+				else -> 0xFF8888AA.toInt()
+			})
+		}
+		findViewById<TextView?>(R.id.btnGuide)?.apply {
+			setTextColor(if (guide) 0xFFFFB74D.toInt() else 0xFF8888AA.toInt())
+		}
+	}
+
+	private fun applyGuideHighlight() {
+		if (viewModel.guideMode.value != true) return
+		val next = viewModel.nextGuidePad() ?: return
+		launchpadGrid.setPadHighlighted(next.first, next.second, 0xFFFF9800.toInt())
+	}
+
+	private fun applyUiMode(mode: ProjectViewModel.UiMode?) {
+		val m = mode ?: ProjectViewModel.UiMode.PLAY
+		modeLabel.text = when (m) {
+			ProjectViewModel.UiMode.PLAY -> "PLAY"
+			ProjectViewModel.UiMode.EDIT -> "MAP / SOUND"
+			ProjectViewModel.UiMode.HYBRID -> "HYBRID"
+			ProjectViewModel.UiMode.LIGHTS -> "LIGHTS / LED"
+		}
+		modeLabel.setTextColor(when (m) {
+			ProjectViewModel.UiMode.PLAY -> 0xFF00ADB5.toInt()
+			ProjectViewModel.UiMode.EDIT -> 0xFF81C784.toInt()
+			ProjectViewModel.UiMode.HYBRID -> 0xFFFFB74D.toInt()
+			ProjectViewModel.UiMode.LIGHTS -> 0xFFB39DDB.toInt()
+		})
+		when (m) {
+			ProjectViewModel.UiMode.PLAY -> { }
+			ProjectViewModel.UiMode.EDIT -> { if (!rightOpen) setRightOpen(true); if (leftOpen) setLeftOpen(false) }
+			ProjectViewModel.UiMode.HYBRID -> { }
+			ProjectViewModel.UiMode.LIGHTS -> {
+				if (!leftOpen) setLeftOpen(true); if (rightOpen) setRightOpen(false); ensureLightshowFragment()
+			}
+		}
+		refreshSideLists()
+	}
+
+	private fun playPadPreview(startMs: Int, endMs: Int, pattern: Pattern?) {
+		if (!::harness.isInitialized) return
+		try { harness.setSource(viewModel.cachedFilePath); harness.fire(startMs, endMs, pattern) }
+		catch (e: Exception) { android.util.Log.e("MainActivity", "Pad fire failed", e) }
+	}
+
+	private fun ensureWaveformFragment() {
+		if (supportFragmentManager.findFragmentByTag("mark_and_cut") == null) {
+			supportFragmentManager.beginTransaction()
+				.replace(R.id.waveformPlaceholder, MarkAndCutFragment(), "mark_and_cut")
+				.commitNowAllowingStateLoss()
+		}
+	}
+
+	private fun ensureLightshowFragment() {
+		if (supportFragmentManager.findFragmentByTag("lightshow") == null) {
+			supportFragmentManager.beginTransaction()
+				.replace(R.id.lightshowPlaceholder, LightshowFragment(), "lightshow")
+				.commitNowAllowingStateLoss()
+		}
+	}
+
+	private fun refreshSideLists() {
+		val session = viewModel.markingSession.value
+		val activeChain = viewModel.currentChain.value ?: 0
+		soundLines.clear(); ledLines.clear()
+		if (session != null) {
+			session.segments().forEachIndexed { i, seg ->
+				val b = seg.button
+				if (b != null) {
+					val loopPart = if (seg.loop != 1 || seg.wormhole >= 0) "  loop=${seg.loop}" else ""
+					val whPart = if (seg.wormhole >= 0) "  wh=${seg.wormhole + 1}" else ""
+					soundLines.add("${b.chain + 1} ${b.x + 1} ${b.y + 1}  cut${i + 1}$loopPart$whPart")
+					if (seg.lightPattern != null) ledLines.add("${b.chain + 1} ${b.x + 1} ${b.y + 1}  ${seg.lightPattern.name.ifBlank { "pattern" }}")
+				} else soundLines.add("cut${i + 1}  (unmapped)")
+			}
+		}
+		val soundSummary = findViewById<TextView?>(R.id.soundFolderSummary)
+		soundSummary?.text = if (soundLines.isEmpty()) "(no mappings yet)" else soundLines.joinToString("\n")
+		findViewById<TextView?>(R.id.ledFolderSummary)?.text = if (ledLines.isEmpty()) "(no LED patterns yet)" else ledLines.joinToString("\n")
+		soundEditor.setText(soundLines.joinToString("\n"))
+		ledEditor.setText(ledLines.joinToString("\n"))
+		soundSummary?.setOnClickListener {
+			if (soundLines.isEmpty()) return@setOnClickListener
+			if (!bottomOpen) setBottomOpen(true)
+			val labels = soundLines.mapIndexed { i, s -> "Cut ${i + 1}: $s" }.toTypedArray()
+			AlertDialog.Builder(this).setTitle("Edit cut in waveform")
+				.setItems(labels) { _, which ->
+					if (!bottomOpen) setBottomOpen(true)
+					viewModel.requestJumpToMark(which)
+				}.setNegativeButton("Cancel", null).show()
+		}
+		val mode = viewModel.uiMode.value
+		if (mode == ProjectViewModel.UiMode.LIGHTS) return
+		if (lightsPlaying) return
+		launchpadGrid.clearAllPads(); launchpadGrid.clearAllHighlights()
+		if (autoPlayRunning) return
+		val litColor = 0xFF00ADB5.toInt()
+		val autoPlay = viewModel.autoPlay.value.orEmpty()
+		val showAutoPlayLabels = viewModel.autoPlayEnabled.value == true
+		val chainPresses = autoPlay.filter { it.button.chain == activeChain }
+		if (mode != ProjectViewModel.UiMode.PLAY || showAutoPlayLabels) {
+			if (showAutoPlayLabels && chainPresses.isNotEmpty()) {
+				val padNums = LinkedHashMap<Pair<Int, Int>, MutableList<Int>>()
+				chainPresses.forEachIndexed { i, press ->
+					padNums.getOrPut(press.button.x to press.button.y) { mutableListOf() }.add(i + 1)
+				}
+				padNums.forEach { (pad, nums) -> launchpadGrid.setPadLit(pad.first, pad.second, litColor, nums.joinToString(" ")) }
+			} else if (mode != ProjectViewModel.UiMode.PLAY) {
+				val padNums = LinkedHashMap<Pair<Int, Int>, MutableList<Int>>()
+				var n = 0
+				session?.segments()?.forEach { seg ->
+					val b = seg.button ?: return@forEach
+					if (b.chain != activeChain) return@forEach
+					n += 1
+					padNums.getOrPut(b.x to b.y) { mutableListOf() }.add(n)
+				}
+				padNums.forEach { (pad, nums) -> launchpadGrid.setPadLit(pad.first, pad.second, litColor, nums.joinToString(" ")) }
+			}
+		}
+		applyGuideHighlight()
+	}
+
+	private fun exportUnipack() {
+		val inputTitle = EditText(this).apply { hint = "Title"; setText("LPBF Pack") }
+		val inputProducer = EditText(this).apply { hint = "Producer"; setText("LPBF") }
+		val box = LinearLayout(this).apply {
+			orientation = LinearLayout.VERTICAL; setPadding(48, 16, 48, 0)
+			addView(inputTitle); addView(inputProducer)
+		}
+		AlertDialog.Builder(this).setTitle("Create Unipack").setView(box)
+			.setPositiveButton("Export") { _, _ ->
+				when (val result = viewModel.createUnipack(this, inputTitle.text.toString(), inputProducer.text.toString())) {
+					is ProjectViewModel.UnipackExportResult.Success ->
+						AlertDialog.Builder(this).setTitle("Exported")
+							.setMessage("${result.soundCount} sounds, ${result.lightshowCount} LEDs\n${result.displayPath}")
+							.setPositiveButton("OK", null).show()
+					is ProjectViewModel.UnipackExportResult.Blocked ->
+						AlertDialog.Builder(this).setMessage("Segments over 8s: ${result.overCapSegmentIndices}").setPositiveButton("OK", null).show()
+					is ProjectViewModel.UnipackExportResult.NothingToExport ->
+						AlertDialog.Builder(this).setMessage("Nothing to export -- import and map first.").setPositiveButton("OK", null).show()
+					is ProjectViewModel.UnipackExportResult.Failed ->
+						AlertDialog.Builder(this).setMessage("Failed: ${result.message}").setPositiveButton("OK", null).show()
+				}
+			}.setNegativeButton("Cancel", null).show()
+	}
+
+	/** Play AutoPlay sequence (UniPad element clock), or mark-order fallback. */
+	private fun startAutoPlaySequence() {
+		stopAutoPlaySequence()
+		val elements = viewModel.autoPlayElements.value.orEmpty()
+		if (elements.isNotEmpty()) {
+			autoPlayRunning = true
+			updateModeChrome()
+			android.util.Log.i("MainActivity", "AutoPlay sequence: ${elements.size} elements")
+			runAutoPlayElements(elements, 0)
+			return
+		}
+		// Legacy press list with timestamps (older imports)
+		val presses = viewModel.autoPlay.value.orEmpty()
+		if (presses.isNotEmpty()) {
+			autoPlayRunning = true
+			updateModeChrome()
+			val t0 = presses.first().timestampMs
+			presses.forEachIndexed { idx, press ->
+				val delay = (press.timestampMs - t0).toLong().coerceAtLeast(0L)
+				autoPlayHandler.postDelayed({
+					if (!autoPlayRunning) return@postDelayed
+					fireAutoPlayOn(press.button, press.occurrenceIndex)
+					if (idx == presses.lastIndex) {
+						autoPlayHandler.postDelayed({ stopAutoPlaySequence() }, 400L)
+					}
+				}, delay)
+			}
+			android.util.Log.i("MainActivity", "AutoPlay sequence: ${presses.size} presses (legacy)")
+			return
+		}
+		val session = viewModel.markingSession.value
+		if (session == null || session.segmentCount == 0) {
+			android.util.Log.i("MainActivity", "AutoPlay: no cuts yet")
+			modeLabel.text = "AP: mark cuts first"
+			return
+		}
+		val cuts = session.segments()
+		autoPlayRunning = true
+		updateModeChrome()
+		var acc = 0L
+		cuts.forEachIndexed { idx, seg ->
+			val delay = acc
+			val hold = seg.durationMs.toLong().coerceAtLeast(200L)
+			val b = seg.button
+			autoPlayHandler.postDelayed({
+				if (!autoPlayRunning) return@postDelayed
+				if (b != null) {
+					launchpadGrid.setPadLit(b.x, b.y, 0xFF00ADB5.toInt(), "${idx + 1}")
+					playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
+				} else {
+					modeLabel.text = "AP cut ${idx + 1}/${cuts.size}"
+					playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
+				}
+				if (idx == cuts.lastIndex) {
+					autoPlayHandler.postDelayed({ stopAutoPlaySequence() }, hold)
+				}
+			}, delay)
+			acc += hold
+		}
+		android.util.Log.i("MainActivity", "AutoPlay fallback: ${cuts.size} cuts (no autoPlay file)")
+	}
+
+	/**
+	 * UniPad AutoPlayRunner-style clock: process all non-delay elements immediately,
+	 * then wait on Delay before continuing. On → fire sound; Off → visual only for now.
+	 */
+	private fun runAutoPlayElements(
+		elements: List<com.bobbypfreely.lpbf.unipack.AutoPlayElement>,
+		startIndex: Int,
+	) {
+		if (!autoPlayRunning) return
+		var i = startIndex
+		while (i < elements.size) {
+			when (val el = elements[i]) {
+				is com.bobbypfreely.lpbf.unipack.AutoPlayElement.Delay -> {
+					val wait = el.delayMs.toLong().coerceAtLeast(0L)
+					val next = i + 1
+					if (wait <= 0L) {
+						i = next
+						continue
+					}
+					autoPlayHandler.postDelayed({
+						if (!autoPlayRunning) return@postDelayed
+						runAutoPlayElements(elements, next)
+					}, wait)
+					return
+				}
+				is com.bobbypfreely.lpbf.unipack.AutoPlayElement.On -> {
+					fireAutoPlayOn(el.button, el.occurrenceIndex)
+					i++
+				}
+				is com.bobbypfreely.lpbf.unipack.AutoPlayElement.Off -> {
+					// One-shots already timed by PadVoicePool duration; Off is for hold/LED.
+					launchpadGrid.setPadLit(el.button.x, el.button.y, 0xFF263238.toInt(), null)
+					i++
+				}
+				is com.bobbypfreely.lpbf.unipack.AutoPlayElement.Chain -> {
+					viewModel.setCurrentChain(el.chain)
+					i++
+				}
+			}
+		}
+		autoPlayHandler.postDelayed({ stopAutoPlaySequence() }, 300L)
+	}
+
+	private fun fireAutoPlayOn(button: com.bobbypfreely.lpbf.marking.ButtonRef, occurrenceIndex: Int) {
+		val session = viewModel.markingSession.value ?: return
+		val matches = session.segments().withIndex().filter { it.value.button == button }
+		if (matches.isEmpty()) return
+		val pick = matches[occurrenceIndex % matches.size]
+		val seg = pick.value
+		launchpadGrid.setPadLit(button.x, button.y, 0xFF00ADB5.toInt(), "${occurrenceIndex + 1}")
+		// Discrete Unipack WAV avoids concat-timeline bleed (matches UniPad sample play)
+		val discrete = viewModel.soundPathFor(button, occurrenceIndex)
+		val dur = seg.durationMs.coerceAtLeast(1)
+		if (discrete != null) {
+			try {
+				harness.fireFile(discrete, dur)
+			} catch (e: Exception) {
+				android.util.Log.e("MainActivity", "AP discrete fire failed", e)
+				playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
+			}
+		} else {
+			playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
+		}
+	}
+
+	private fun stopAutoPlaySequence() {
+		autoPlayRunning = false
+		autoPlayHandler.removeCallbacksAndMessages(null)
+		updateModeChrome()
+		refreshSideLists()
 	}
 
 	private fun setLeftOpen(open: Boolean) {
-		if (leftOpen == open) { if (open) ensureLightshowFragment(); return }
+		if (leftOpen == open) {
+			if (open) ensureLightshowFragment()
+			return
+		}
 		leftOpen = open
 		leftDrawer.visibility = if (open) View.VISIBLE else View.GONE
 		if (open) ensureLightshowFragment()
@@ -138,33 +600,28 @@ class MainActivity : AppCompatActivity() {
 	}
 
 	private fun setBottomOpen(open: Boolean) {
-		if (bottomOpen == open) { if (open) ensureWaveformFragment(); return }
+		if (bottomOpen == open) {
+			if (open) ensureWaveformFragment()
+			return
+		}
 		bottomOpen = open
 		bottomDrawer.visibility = if (open) View.VISIBLE else View.GONE
 		viewModel.isMarkAndCutTabActive = open
-		if (open) ensureWaveformFragment() else viewModel.autosave(applicationContext)
+		if (open) {
+			ensureWaveformFragment()
+			showWaveformTipIfNeeded()
+		} else {
+			viewModel.autosave(applicationContext)
+		}
 		updateCenterInsets()
 	}
-
-	private fun ensureLightshowFragment() {
-		if (supportFragmentManager.findFragmentById(R.id.lightshowPlaceholder) != null) return
-		supportFragmentManager.beginTransaction()
-			.replace(R.id.lightshowPlaceholder, LightshowFragment()).commit()
-	}
-
-	private fun ensureWaveformFragment() {
-		if (supportFragmentManager.findFragmentById(R.id.waveformPlaceholder) != null) return
-		supportFragmentManager.beginTransaction()
-			.replace(R.id.waveformPlaceholder, MarkAndCutFragment()).commit()
-	}
-
-	private fun refreshSideLists() {}
 
 	private fun updateCenterInsets() {
 		val density = resources.displayMetrics.density
 		val showPresets = leftOpen && viewModel.uiMode.value == ProjectViewModel.UiMode.LIGHTS
 		if (::presetsPanel.isInitialized) {
 			presetsPanel.visibility = if (showPresets) View.VISIBLE else View.GONE
+			if (showPresets) ensurePresetsFilled()
 		}
 		val left = if (leftOpen) (drawerWidthDp * density).toInt() else (baseSideMarginDp * density).toInt()
 		val right = when {
@@ -184,6 +641,7 @@ class MainActivity : AppCompatActivity() {
 			}
 		}
 		val lp = centerPadContainer.layoutParams as ViewGroup.MarginLayoutParams
+		// Symmetric top; grid centers in the remaining band between left drawer and presets/right.
 		lp.leftMargin = left
 		lp.rightMargin = right
 		lp.bottomMargin = bottom
@@ -193,8 +651,47 @@ class MainActivity : AppCompatActivity() {
 		launchpadGrid.requestLayout()
 	}
 
-	override fun onPause() {
-		super.onPause()
-		viewModel.autosave(applicationContext)
+	private var presetsFilled = false
+
+	private fun ensurePresetsFilled() {
+		if (!::presetsList.isInitialized) return
+		if (presetsFilled && presetsList.childCount > 0) return
+		presetsList.removeAllViews()
+		val patterns = try {
+			com.bobbypfreely.lpbf.lightshow.PatternShortcutStore.allAvailable(this)
+		} catch (_: Exception) {
+			com.bobbypfreely.lpbf.lightshow.BuiltInPatterns.all()
+		}
+		val density = resources.displayMetrics.density
+		for (pattern in patterns) {
+			val btn = TextView(this).apply {
+				text = pattern.name
+				setTextColor(0xFFE0E0F0.toInt())
+				textSize = 11f
+				gravity = android.view.Gravity.CENTER
+				setPadding((6 * density).toInt(), (8 * density).toInt(), (6 * density).toInt(), (8 * density).toInt())
+				setBackgroundColor(0xFF1A1A28.toInt())
+				val lp = LinearLayout.LayoutParams(
+					LinearLayout.LayoutParams.MATCH_PARENT,
+					LinearLayout.LayoutParams.WRAP_CONTENT,
+				)
+				lp.bottomMargin = (4 * density).toInt()
+				layoutParams = lp
+				isClickable = true
+				isFocusable = true
+				setOnClickListener {
+					val sel = viewModel.selectedLightshowSegment.value
+					if (sel == null) {
+						viewModel.logDebug("Preset '${pattern.name}': select a cut on the grid first")
+						return@setOnClickListener
+					}
+					viewModel.applyPatternShortcut(pattern, sel)
+					viewModel.logDebug("Applied preset '${pattern.name}' to cut ${sel + 1}")
+				}
+			}
+			presetsList.addView(btn)
+		}
+		presetsFilled = true
+		viewModel.logDebug("Presets panel: ${patterns.size} shortcuts")
 	}
 }
