@@ -6,7 +6,7 @@ import com.bobbypfreely.lpbf.marking.ButtonRef
 import java.io.ByteArrayOutputStream
 import java.io.File
 
-/** /** One audio source to fold into a concatenated import timeline, with an optional */
+/** One audio source to fold into a concatenated import timeline, with an optional */
 data class ImportClipSource(
 	val filePath: String,
 	val button: ButtonRef? = null,

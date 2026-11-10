@@ -9,7 +9,7 @@ class MarkingSession(private val trackDurationMs: Int) {
 		/** No hard composer cap. UniPad devices may still choke on very long samples */
 		const val MAX_SEGMENT_MS = Int.MAX_VALUE / 4
 
-		/** /** Rebuilds a session from previously-saved marks/buttons/patterns (project resume */
+		/** Rebuilds a session from previously-saved marks/buttons/patterns (project resume */
 		fun restore(
 			trackDurationMs: Int,
 			marks: List<Int>,

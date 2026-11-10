@@ -149,7 +149,7 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 		}, durationMs)
 	}
 
-	/** /** The real "play with music and lightshow" piece: schedules this cut's Pattern */
+	/** The real "play with music and lightshow" piece: schedules this cut's Pattern */
 	private fun playLightshowLive(pattern: com.bobbypfreely.lpbf.lightshow.Pattern?, durationMs: Int) {
 		if (pattern == null || durationMs <= 0) return
 		pattern.keyframes.forEach { kf ->
@@ -166,7 +166,7 @@ class PlaceFragment : Fragment(R.layout.fragment_place) {
 		}
 	}
 
-	/** /** Rough palette approximation for a raw velocity when no explicit color was given */
+	/** Rough palette approximation for a raw velocity when no explicit color was given */
 	private fun velocityToColor(velocity: Int): Int {
 		val hue = (velocity.coerceIn(0, 127) / 127f) * 300f
 		return Color.HSVToColor(floatArrayOf(hue, 0.85f, 1f))

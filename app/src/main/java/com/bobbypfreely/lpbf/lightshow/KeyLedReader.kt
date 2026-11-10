@@ -5,7 +5,7 @@ import java.io.File
 /** Reads a real keyLED file back into this app's own Pattern model. This is the missing */
 object KeyLedReader {
 
-	/** /** One on/off event at an absolute millisecond offset from the start of this */
+	/** One on/off event at an absolute millisecond offset from the start of this */
 	data class TimedEvent(val atMs: Int, val x: Int, val y: Int, val on: Boolean, val velocity: Int, val color: Int? = null)
 
 	/** Finds the Nth keyLED file mapped to (chain,x,y), where N is occurrenceIndex -- */
@@ -21,7 +21,7 @@ object KeyLedReader {
 		return candidates.getOrNull(occurrenceIndex)
 	}
 
-	/** /** Parses one keyLED file's raw text into a flat, time-ordered event list. Malformed */
+	/** Parses one keyLED file's raw text into a flat, time-ordered event list. Malformed */
 	fun parse(file: File): List<TimedEvent> {
 		var t = 0
 		val events = mutableListOf<TimedEvent>()
@@ -101,7 +101,7 @@ object KeyLedReader {
 		return events
 	}
 
-	/** /** Converts a parsed event list into a normalized-time Pattern, scaling each */
+	/** Converts a parsed event list into a normalized-time Pattern, scaling each */
 	fun toPattern(name: String, events: List<TimedEvent>, durationMs: Int): Pattern? {
 		if (events.isEmpty() || durationMs <= 0) return null
 		val keyframes = events.map { e ->
