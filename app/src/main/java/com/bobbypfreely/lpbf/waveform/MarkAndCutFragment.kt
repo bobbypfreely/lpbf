@@ -44,24 +44,23 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 	private data class DragState(val markIndex: Int, val originalMs: Int, val startRawX: Float)
 	private var dragState: DragState? = null
 
-		private var highlightedMarkMs: Int? = null
-		private val highlightClearHandler = android.os.Handler(android.os.Looper.getMainLooper())
+	private var highlightedMarkMs: Int? = null
+	private val highlightClearHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
 	private var isUserSeeking = false
 	private val positionPollHandler = android.os.Handler(android.os.Looper.getMainLooper())
-	
+
 	private fun formatWaveformTime(ms: Int): String {
 		val totalSec = (ms.coerceAtLeast(0)) / 1000
 		val m = totalSec / 60
 		val s = totalSec % 60
-		val frac = ((ms.coerceAtLeast(0)) % 1000) / 100  // tenths
+		val frac = ((ms.coerceAtLeast(0)) % 1000) / 100
 		return "%d:%02d.%d".format(m, s, frac)
 	}
 
 	private fun updateWaveformTimeLabel(positionMs: Int? = null) {
 		if (!::waveformTimeText.isInitialized) return
-		val pos = positionMs
-			?: (exoController?.currentPositionMs() ?: 0)
+		val pos = positionMs ?: (exoController?.currentPositionMs() ?: 0)
 		val totalMs = viewModel.decodedAudio.value?.totalDurationMs ?: 0
 		waveformTimeText.text = "${formatWaveformTime(pos)} / ${formatWaveformTime(totalMs)}"
 	}
@@ -124,9 +123,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		restartButton.setOnClickListener { exoController?.playFrom(0) }
 		playbackSeekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
 			override fun onProgressChanged(seekBar: android.widget.SeekBar, progress: Int, fromUser: Boolean) {}
-			override fun onStartTrackingTouch(seekBar: android.widget.SeekBar) {
-				isUserSeeking = true
-			}
+			override fun onStartTrackingTouch(seekBar: android.widget.SeekBar) { isUserSeeking = true }
 			override fun onStopTrackingTouch(seekBar: android.widget.SeekBar) {
 				isUserSeeking = false
 				exoController?.seekTo(seekBar.progress)
@@ -145,7 +142,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				waveformView.setAudioData(
 					gainData.numFrames, gainData.frameGains, gainData.sampleRate, gainData.samplesPerFrame
 				)
-				// Force paint after import — setAudioData alone does not always trigger onDraw
 				waveformView.invalidate()
 				statusText.text = "Decoded: ${audio.totalDurationMs}ms. Play, then tap 'Mark Cut Here' to cut."
 				updateWaveformTimeLabel(0)
@@ -212,17 +208,13 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 
 	private fun togglePlayPause() {
 		val controller = exoController ?: return
-		if (controller.isPlaying) {
-			controller.pause()
-		} else {
-			controller.playFrom(controller.currentPositionMs())
-		}
+		if (controller.isPlaying) controller.pause()
+		else controller.playFrom(controller.currentPositionMs())
 	}
 
 	private fun dropMark() {
 		val controller = exoController ?: return
-		val posMs = controller.currentPositionMs()
-		viewModel.dropMark(posMs)
+		viewModel.dropMark(controller.currentPositionMs())
 	}
 
 	private fun showCapDialog(gapMs: Int, maxMs: Int) {
@@ -236,20 +228,38 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			.show()
 	}
 
+	private fun showMainMenu(anchor: View) {
+		val popup = PopupMenu(requireContext(), anchor)
+		popup.menu.add(0, 1, 0, "New project — slice track")
+		popup.menu.add(0, 2, 1, "Load existing / Recover")
+		popup.menu.add(0, 3, 2, "Import pack (zip)")
+		popup.menu.add(0, 4, 3, "Import folder")
+		popup.menu.add(0, 5, 4, "Import pre-cut clips")
+		popup.menu.add(0, 6, 5, "Exit")
+		popup.setOnMenuItemClickListener { item ->
+			when (item.itemId) {
+				1 -> pickAudio.launch(arrayOf("audio/*"))
+				2 -> showLoadProjectDialog()
+				3 -> pickUnipack.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*"))
+				4 -> pickUnipackFolder.launch(null)
+				5 -> pickPreCutTracks.launch(arrayOf("audio/*"))
+				6 -> activity?.finish()
+			}
+			true
+		}
+		popup.show()
+	}
+
 	private fun refreshMarkers() {
 		val session = viewModel.markingSession.value ?: return
 		if (!waveformView.hasSoundFile()) return
-
 		val markPositions = mutableListOf(0)
 		session.segments().forEach { markPositions.add(it.endMs) }
 		markOverlay.markPositionsMs = markPositions
-
 		markerViews.forEach { waveformContainer.removeView(it) }
 		markerViews.clear()
-
 		val offset = waveformView.offset
 		val handleSizePx = (24 * resources.displayMetrics.density).roundToInt()
-
 		for (index in 1 until markPositions.size) {
 			val ms = markPositions[index]
 			val px = waveformView.millisecsToPixels(ms) - offset
@@ -271,11 +281,9 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		val session = viewModel.markingSession.value ?: return
 		if (segmentIndex !in session.segments().indices) return
 		if (!waveformView.hasSoundFile()) return
-
 		val ms = session.segment(segmentIndex).endMs
 		highlightedMarkMs = ms
 		highlightClearHandler.removeCallbacksAndMessages(null)
-
 		val px = waveformView.millisecsToPixels(ms)
 		val visibleWidth = waveformContainer.width.takeIf { it > 0 } ?: waveformView.width
 		var newOffset = px - visibleWidth / 2
@@ -286,7 +294,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		waveformView.invalidate()
 		refreshMarkers()
 		statusText.text = "Jumped to cut ${segmentIndex + 1}'s end mark for editing."
-
 		highlightClearHandler.postDelayed({
 			if (highlightedMarkMs == ms) {
 				highlightedMarkMs = null
@@ -299,23 +306,18 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		override fun markerTouchStart(marker: MarkerView, pos: Float) {
 			dragState = DragState(markIndex, originalMs, pos)
 		}
-
 		override fun markerTouchMove(marker: MarkerView, pos: Float) {
 			val state = dragState ?: return
-			val delta = pos - state.startRawX
-			marker.translationX = delta
+			marker.translationX = pos - state.startRawX
 		}
-
 		override fun markerTouchEnd(marker: MarkerView) {
 			val state = dragState ?: return
 			dragState = null
 			val session = viewModel.markingSession.value ?: return
-
 			val offset = waveformView.offset
 			val originalPx = waveformView.millisecsToPixels(state.originalMs) - offset
 			val finalPx = originalPx + marker.translationX.roundToInt()
 			val newMs = waveformView.pixelsToMillisecs(finalPx + offset)
-
 			when (val result = session.rippleMoveMark(state.markIndex, newMs)) {
 				is MarkingSession.RippleResult.Success -> viewModel.notifySegmentsChanged()
 				is MarkingSession.RippleResult.Rejected -> {
@@ -324,7 +326,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				}
 			}
 		}
-
 		override fun markerFocus(marker: MarkerView) {}
 		override fun markerLeft(marker: MarkerView, velocity: Int) {}
 		override fun markerRight(marker: MarkerView, velocity: Int) {}
@@ -337,7 +338,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		touchStartX = x
 		touchInitialOffset = waveformView.offset
 	}
-
 	override fun waveformTouchMove(x: Float) {
 		val maxPos = waveformView.maxPos()
 		var newOffset = (touchInitialOffset + (touchStartX - x)).roundToInt()
@@ -347,7 +347,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		waveformView.invalidate()
 		refreshMarkers()
 	}
-
 	override fun waveformTouchEnd() {}
 	override fun waveformFling(x: Float) {}
 	override fun waveformDraw() {}
@@ -378,16 +377,14 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}.toTypedArray()
 		AlertDialog.Builder(requireContext())
 			.setTitle("Recover autosave")
-			.setItems(labels) { _, which ->
-				loadProject(projects[which].id)
-			}
+			.setItems(labels) { _, which -> loadProject(projects[which].id) }
 			.setNegativeButton("Cancel", null)
 			.show()
 	}
 
 	private fun loadProject(id: String) {
 		val context = requireContext().applicationContext
-		statusText.text = "Loading project\u2026"
+		statusText.text = "Loading project…"
 		thread(name = "lpbf-load-project") {
 			try {
 				val loaded = viewModel.readProjectForLoad(context, id)
@@ -411,17 +408,13 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 
 	private fun decodeAndLoad(uri: Uri) {
 		val context = requireContext().applicationContext
-		activity?.runOnUiThread { statusText.text = "Copying file\u2026" }
+		activity?.runOnUiThread { statusText.text = "Copying file…" }
 		thread(name = "lpbf-decode") {
 			try {
 				val tempFile = copyUriToCacheFile(context, uri)
-				activity?.runOnUiThread {
-					statusText.text = "Copied ${tempFile.length()} bytes, decoding\u2026"
-				}
+				activity?.runOnUiThread { statusText.text = "Copied ${tempFile.length()} bytes, decoding…" }
 				val audio = AudioDecoder.decode(tempFile.absolutePath)
-				activity?.runOnUiThread {
-					viewModel.setDecodedAudio(audio, tempFile.absolutePath)
-				}
+				activity?.runOnUiThread { viewModel.setDecodedAudio(audio, tempFile.absolutePath) }
 			} catch (e: Exception) {
 				android.util.Log.e("MarkAndCutFragment", "Decode failed", e)
 				activity?.runOnUiThread {
@@ -431,7 +424,6 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		}
 	}
 
-	/** Persistent import dir under filesDir — cacheDir gets wiped and causes FILE_NOT_FOUND after rotate/headphones. */
 	private fun importDir(context: android.content.Context): java.io.File =
 		java.io.File(context.filesDir, "imports").also { it.mkdirs() }
 
@@ -439,454 +431,18 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		val tempFile = java.io.File(importDir(context), "lpbf_import_temp.audio")
 		val input = context.contentResolver.openInputStream(uri)
 			?: error("Could not open input stream for $uri")
-		input.use { inStream ->
-			tempFile.outputStream().use { outStream ->
-				inStream.copyTo(outStream)
-			}
-		}
+		input.use { inStream -> tempFile.outputStream().use { out -> inStream.copyTo(out) } }
 		return tempFile
 	}
 
-	private fun copyUriToUniqueCacheFile(context: android.content.Context, uri: Uri, index: Int): java.io.File {
-		val displayName = queryDisplayName(context, uri) ?: "import_$index"
-		val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
-		val tempFile = java.io.File(importDir(context), "lpbf_multi_${System.currentTimeMillis()}_${index}_$safeName")
-		val input = context.contentResolver.openInputStream(uri) ?: error("Could not open input stream for $uri")
-		input.use { inStream ->
-			tempFile.outputStream().use { outStream -> inStream.copyTo(outStream) }
-		}
-		return tempFile
-	}
-
-	private fun queryDisplayName(context: android.content.Context, uri: Uri): String? {
-		return try {
-			context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-				if (cursor.moveToFirst()) {
-					val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-					if (idx >= 0) cursor.getString(idx) else null
-				} else null
-			}
-		} catch (e: Exception) {
-			null
-		}
-	}
-
-	private fun importPreCutTracks(uris: List<Uri>) {
-		val context = requireContext().applicationContext
-		statusText.text = "Importing ${uris.size} track(s)\u2026"
-		thread(name = "lpbf-import-precut") {
-			try {
-				val sources = uris.mapIndexed { index, uri ->
-					val file = copyUriToUniqueCacheFile(context, uri, index)
-					com.bobbypfreely.lpbf.audio.ImportClipSource(filePath = file.absolutePath, button = null)
-				}
-				val result = com.bobbypfreely.lpbf.audio.MultiClipImporter.buildConcatenatedImport(sources, importDir(context))
-				activity?.runOnUiThread {
-					viewModel.applyMultiClipImport(result)
-					statusText.text = if (result.skipped.isEmpty()) {
-						"Imported ${result.buttons.size} pre-cut track(s)."
-					} else {
-						"Imported ${result.buttons.size} track(s), skipped ${result.skipped.size}: ${result.skipped.joinToString("; ")}"
-					}
-				}
-			} catch (e: Exception) {
-				android.util.Log.e("MarkAndCutFragment", "Pre-cut import failed", e)
-				activity?.runOnUiThread { statusText.text = "Import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
-			}
-		}
-	}
-
-	private fun importUnipack(uri: Uri) {
-		val context = requireContext().applicationContext
-		statusText.text = "Importing Unipack\u2026"
-		thread(name = "lpbf-import-unipack") {
-			try {
-				val zipCopy = copyUriToUniqueCacheFile(context, uri, 0)
-				val extractDir = java.io.File(importDir(context), "lpbf_unipack_extract_${System.currentTimeMillis()}")
-				com.bobbypfreely.lpbf.unipack.UnipackReader.extractZip(zipCopy, extractDir)
-				importFromExtractedDir(context, extractDir)
-			} catch (e: Exception) {
-				android.util.Log.e("MarkAndCutFragment", "Unipack import failed", e)
-				activity?.runOnUiThread { statusText.text = "Unipack import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
-			}
-		}
-	}
-
-	private fun importUnipackFolder(treeUri: Uri) {
-		val context = requireContext().applicationContext
-		statusText.text = "Importing Unipack folder\u2026"
-		thread(name = "lpbf-import-unipack-folder") {
-			try {
-				val extractDir = copyDocumentTreeToCache(context, treeUri)
-				checkAudioThenKeyLedThenFinish(extractDir)
-			} catch (e: Exception) {
-				android.util.Log.e("MarkAndCutFragment", "Unipack folder import failed", e)
-				activity?.runOnUiThread { statusText.text = "Unipack folder import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
-			}
-		}
-	}
-
-	private enum class MergeKind { AUDIO, KEYLED }
-	private var pendingUnipackExtractDir: java.io.File? = null
-	private var pendingMergeKind: MergeKind? = null
-
-	private val pickMergeFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-		val extractDir = pendingUnipackExtractDir
-		val kind = pendingMergeKind
-		pendingUnipackExtractDir = null
-		pendingMergeKind = null
-		if (uri == null || extractDir == null || kind == null) {
-			if (extractDir != null) finishUnipackImport(extractDir)
-			return@registerForActivityResult
-		}
-		when (kind) {
-			MergeKind.AUDIO -> mergeAudioFolderAndContinue(uri, extractDir)
-			MergeKind.KEYLED -> mergeKeyLedFolderAndContinue(uri, extractDir)
-		}
-	}
-
-	private fun checkAudioThenKeyLedThenFinish(extractDir: java.io.File) {
-		val hasKeySound = extractDir.listFiles()?.any { it.isFile && it.name.equals("keySound", ignoreCase = true) } == true
-		val hasSounds = extractDir.listFiles()?.any { it.isDirectory && it.name.equals("sounds", ignoreCase = true) } == true
-		if (!hasKeySound || !hasSounds) {
-			activity?.runOnUiThread { promptForMissingAudio(extractDir) }
-		} else {
-			checkKeyLedThenFinish(extractDir)
-		}
-	}
-
-	private fun checkKeyLedThenFinish(extractDir: java.io.File) {
-		val hasKeyLed = extractDir.listFiles()?.any { it.isDirectory && it.name.equals("keyLed", ignoreCase = true) } == true
-		if (!hasKeyLed) {
-			activity?.runOnUiThread { promptForMissingKeyLed(extractDir) }
-		} else {
-			finishUnipackImport(extractDir)
-		}
-	}
-
-	private fun promptForMissingAudio(extractDir: java.io.File) {
-		AlertDialog.Builder(requireContext())
-			.setTitle("No keySound/sounds found")
-			.setMessage("This folder is missing the keySound file and/or the sounds folder. Import them from a different location?")
-			.setPositiveButton("Yes") { _, _ ->
-				pendingUnipackExtractDir = extractDir
-				pendingMergeKind = MergeKind.AUDIO
-				pickMergeFolder.launch(null)
-			}
-			.setNegativeButton("Cancel") { _, _ -> statusText.text = "Import cancelled -- nothing playable without audio." }
-			.setCancelable(false)
-			.show()
-	}
-
-	private fun promptForMissingKeyLed(extractDir: java.io.File) {
-		AlertDialog.Builder(requireContext())
-			.setTitle("No keyLED files found")
-			.setMessage("This folder has no keyLed folder. Import keyLED files from a different location too?")
-			.setPositiveButton("Yes") { _, _ ->
-				pendingUnipackExtractDir = extractDir
-				pendingMergeKind = MergeKind.KEYLED
-				pickMergeFolder.launch(null)
-			}
-			.setNegativeButton("No, audio only") { _, _ -> finishUnipackImport(extractDir) }
-			.setCancelable(false)
-			.show()
-	}
-
-	private fun mergeAudioFolderAndContinue(pickedUri: Uri, extractDir: java.io.File) {
-		val context = requireContext().applicationContext
-		statusText.text = "Adding keySound/sounds\u2026"
-		thread(name = "lpbf-merge-audio") {
-			try {
-				val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, pickedUri)
-					?: error("Could not open the selected folder")
-				val keySoundDoc = findChild(root, "keySound", wantDir = false)
-				val soundsDoc = findChild(root, "sounds", wantDir = true)
-				if (keySoundDoc == null || soundsDoc == null) {
-					activity?.runOnUiThread { statusText.text = "That folder doesn't have both a keySound file and a sounds folder." }
-					return@thread
-				}
-				context.contentResolver.openInputStream(keySoundDoc.uri)?.use { input ->
-					java.io.File(extractDir, "keySound").outputStream().use { output -> input.copyTo(output) }
-				}
-				val soundsDir = java.io.File(extractDir, "sounds").apply { mkdirs() }
-				copyDocumentFileTree(context, soundsDoc, soundsDir)
-				checkKeyLedThenFinish(extractDir)
-			} catch (e: Exception) {
-				android.util.Log.e("MarkAndCutFragment", "Audio merge failed", e)
-				activity?.runOnUiThread { statusText.text = "Couldn't add keySound/sounds: ${e.message}" }
-			}
-		}
-	}
-
-	private fun mergeKeyLedFolderAndContinue(pickedUri: Uri, extractDir: java.io.File) {
-		val context = requireContext().applicationContext
-		statusText.text = "Adding keyLED files\u2026"
-		thread(name = "lpbf-merge-keyled") {
-			try {
-				val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, pickedUri)
-					?: error("Could not open the selected folder")
-				val keyLedSource = findChild(root, "keyLed", wantDir = true) ?: root
-				val keyLedDir = java.io.File(extractDir, "keyLed").apply { mkdirs() }
-				copyDocumentFileTree(context, keyLedSource, keyLedDir)
-				finishUnipackImport(extractDir)
-			} catch (e: Exception) {
-				android.util.Log.e("MarkAndCutFragment", "keyLed merge failed", e)
-				activity?.runOnUiThread { statusText.text = "Couldn't add keyLED files: ${e.message}. Importing audio only." }
-				finishUnipackImport(extractDir)
-			}
-		}
-	}
-
-	private fun findChild(root: androidx.documentfile.provider.DocumentFile, name: String, wantDir: Boolean): androidx.documentfile.provider.DocumentFile? {
-		return root.listFiles().firstOrNull { it.name?.equals(name, ignoreCase = true) == true && it.isDirectory == wantDir }
-	}
-
-	private fun finishUnipackImport(extractDir: java.io.File) {
-		val context = requireContext().applicationContext
-		thread(name = "lpbf-finish-unipack-import") {
-			try {
-				importFromExtractedDir(context, extractDir)
-			} catch (e: Exception) {
-				android.util.Log.e("MarkAndCutFragment", "Unipack import failed", e)
-				activity?.runOnUiThread { statusText.text = "Unipack import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
-			}
-		}
-	}
-
-
-	/** Match keySound path to a real file under sounds/ (missing/wrong extension common in old packs). */
-	private fun resolveSoundFile(soundsDir: java.io.File, relativePath: String): java.io.File? {
-		val direct = java.io.File(soundsDir, relativePath)
-		if (direct.isFile) return direct
-		val baseName = java.io.File(relativePath).name
-		val parentRel = java.io.File(relativePath).parent
-		val searchDir = if (parentRel != null) java.io.File(soundsDir, parentRel) else soundsDir
-		if (!searchDir.isDirectory) return null
-		val stem = baseName.substringBeforeLast('.', baseName).lowercase()
-		val candidates = searchDir.listFiles()?.filter { it.isFile } ?: return null
-		// exact name ignore case
-		candidates.firstOrNull { it.name.equals(baseName, ignoreCase = true) }?.let { return it }
-		// same stem, any extension
-		candidates.firstOrNull {
-			it.nameWithoutExtension.equals(stem, ignoreCase = true)
-		}?.let { return it }
-		// file has no extension but keySound has one (or opposite)
-		candidates.firstOrNull {
-			it.name.lowercase() == stem || it.nameWithoutExtension.lowercase() == stem
-		}?.let { return it }
-		return null
-	}
-
-	/**
-	 * If keySound names files with .wav/.mp3 but disk has bare names (or wrong ext),
-	 * return list of (foundFile -> desired relative path under sounds/).
-	 */
-	private fun planSoundNameFixes(
-		soundsDir: java.io.File,
-		entries: List<com.bobbypfreely.lpbf.unipack.UnipackKeySoundEntry>,
-	): List<Pair<java.io.File, String>> {
-		val fixes = mutableListOf<Pair<java.io.File, String>>()
-		val seen = mutableSetOf<String>()
-		for (entry in entries) {
-			val desired = entry.soundRelativePath.replace('\\', '/')
-			val desiredFile = java.io.File(soundsDir, desired)
-			if (desiredFile.isFile) continue
-			val found = resolveSoundFile(soundsDir, desired) ?: continue
-			if (found.absolutePath == desiredFile.absolutePath) continue
-			val key = found.absolutePath
-			if (!seen.add(key)) continue
-			// Only auto-fix when it's clearly an extension / case issue
-			val sameStem = found.nameWithoutExtension.equals(
-				java.io.File(desired).nameWithoutExtension,
-				ignoreCase = true,
-			)
-			if (sameStem) fixes.add(found to desired)
-		}
-		return fixes
-	}
-
-	private fun applySoundNameFixes(soundsDir: java.io.File, fixes: List<Pair<java.io.File, String>>): Int {
-		var n = 0
-		for ((from, desiredRel) in fixes) {
-			val dest = java.io.File(soundsDir, desiredRel)
-			dest.parentFile?.mkdirs()
-			if (dest.exists()) continue
-			try {
-				if (from.renameTo(dest)) {
-					n++
-				} else {
-					from.copyTo(dest, overwrite = false)
-					if (dest.isFile) {
-						from.delete()
-						n++
-					}
-				}
-			} catch (e: Exception) {
-				android.util.Log.w("MarkAndCutFragment", "Could not fix ${from.name} -> $desiredRel", e)
-			}
-		}
-		return n
-	}
-
-	private fun importFromExtractedDir(context: android.content.Context, extractDir: java.io.File) {
-		val read = com.bobbypfreely.lpbf.unipack.UnipackReader.read(extractDir)
-		val fixes = planSoundNameFixes(read.soundsDir, read.entries)
-		if (fixes.isNotEmpty()) {
-			val sample = fixes.take(6).joinToString("\n") { (from, to) ->
-				"${from.name}  →  ${java.io.File(to).name}"
-			}
-			val more = if (fixes.size > 6) "\n…and ${fixes.size - 6} more" else ""
-			val latch = java.util.concurrent.CountDownLatch(1)
-			var applyFixes = false
-			activity?.runOnUiThread {
-				android.app.AlertDialog.Builder(requireContext())
-					.setTitle("Fix sound file names?")
-					.setMessage(
-						"${fixes.size} file(s) don't match keySound (often missing .wav / .mp3).\n" +
-							"Rename them to match keySound?\n\n$sample$more"
-					)
-					.setPositiveButton("Fix") { _, _ -> applyFixes = true; latch.countDown() }
-					.setNegativeButton("Skip") { _, _ -> latch.countDown() }
-					.setOnCancelListener { latch.countDown() }
-					.show()
-			} ?: latch.countDown()
-			try { latch.await(120, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Exception) {}
-			if (applyFixes) {
-				val n = applySoundNameFixes(read.soundsDir, fixes)
-				activity?.runOnUiThread {
-					statusText.text = "Renamed $n sound file(s) to match keySound."
-				}
-			}
-		}
-
-		val occurrenceCount = mutableMapOf<com.bobbypfreely.lpbf.marking.ButtonRef, Int>()
-		var unparseableKeyLedCount = 0
-		val sources = read.entries.mapNotNull { entry ->
-			val soundFile = resolveSoundFile(read.soundsDir, entry.soundRelativePath)
-				?: java.io.File(read.soundsDir, entry.soundRelativePath)
-			if (!soundFile.isFile) {
-				android.util.Log.w("MarkAndCutFragment", "Missing sound: ${entry.soundRelativePath}")
-				return@mapNotNull null
-			}
-			val occurrence = occurrenceCount.getOrDefault(entry.button, 0)
-			occurrenceCount[entry.button] = occurrence + 1
-
-			val rawLedEvents = read.keyLedDir?.let { dir ->
-				com.bobbypfreely.lpbf.lightshow.KeyLedReader.findFile(
-					dir, entry.button.chain, entry.button.x, entry.button.y, occurrence
-				)?.let { file ->
-					try {
-						val parsed = com.bobbypfreely.lpbf.lightshow.KeyLedReader.parse(file)
-						if (parsed.isEmpty() && file.length() > 0) unparseableKeyLedCount++
-						parsed
-					} catch (e: Exception) {
-						android.util.Log.w("MarkAndCutFragment", "Couldn't parse keyLED file ${file.name}", e)
-						null
-					}
-				}
-			}
-
-			com.bobbypfreely.lpbf.audio.ImportClipSource(
-				filePath = soundFile.absolutePath,
-				button = entry.button,
-				rawLedEvents = rawLedEvents,
-				loop = entry.loop,
-				wormhole = entry.wormhole,
-			)
-		}
-		if (sources.isEmpty()) {
-			activity?.runOnUiThread { statusText.text = "Unipack has no sounds mapped -- nothing to import." }
-			return
-		}
-
-		val pathMap = linkedMapOf<com.bobbypfreely.lpbf.marking.ButtonRef, MutableList<String>>()
-		val soundNames = ArrayList<String>()
-		for ((idx, src) in sources.withIndex()) {
-			val b = src.button
-			if (b != null) pathMap.getOrPut(b) { mutableListOf() }.add(src.filePath)
-			val rel = read.entries.getOrNull(idx)?.soundRelativePath
-				?: java.io.File(src.filePath).name
-			soundNames.add(rel)
-		}
-		val keySoundRaw = try {
-			extractDir.listFiles()?.firstOrNull { it.isFile && it.name.equals("keySound", ignoreCase = true) }?.readText()
-		} catch (_: Exception) { null }
-		val result = com.bobbypfreely.lpbf.audio.MultiClipImporter.buildConcatenatedImport(sources, importDir(context))
-		activity?.runOnUiThread {
-			viewModel.applyMultiClipImport(result)
-			viewModel.setPadSoundPaths(pathMap)
-			viewModel.setImportedSoundNames(soundNames)
-			viewModel.storeImportedKeySoundRaw(keySoundRaw)
-			// Drive pad labels + future playback from real performance order when present
-			viewModel.setAutoPlay(
-				read.autoPlay,
-				read.autoPlayRaw,
-				read.autoPlayProgram?.elements.orEmpty(),
-			)
-			val apNote = if (read.autoPlay.isEmpty()) " (no autoPlay — labels use map order)" else " autoPlay=${read.autoPlay.size} presses"
-			val summary = StringBuilder("Imported Unipack '${read.info.title}' -- ${result.buttons.size} cut(s).$apNote")
-			val lightshowCount = result.patterns.count { it != null }
-			if (lightshowCount > 0) {
-				summary.append(" $lightshowCount with an existing lightshow.")
-			} else if (read.keyLedDir == null) {
-				summary.append(" No keyLed folder in this pack -- nothing to import there.")
-			}
-			if (unparseableKeyLedCount > 0) {
-				summary.append(" $unparseableKeyLedCount keyLED file(s) had content LPBF couldn't parse -- not imported.")
-			}
-			if (read.info.chainCount > 8) {
-				summary.append(" Note: this pack uses ${read.info.chainCount} chains; Place only exposes chains 1-8 for editing right now.")
-			}
-			if (result.skipped.isNotEmpty()) {
-				summary.append(" Skipped ${result.skipped.size}: ${result.skipped.joinToString("; ")}")
-			}
-			if (read.warnings.isNotEmpty()) {
-				summary.append(" Warnings: ${read.warnings.joinToString("; ")}")
-			}
-			statusText.text = summary.toString()
-		}
-	}
-
-	private fun copyDocumentTreeToCache(context: android.content.Context, treeUri: Uri): java.io.File {
-		val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
-			?: error("Could not open the selected folder")
-		val targetDir = java.io.File(importDir(context), "lpbf_unipack_folder_${System.currentTimeMillis()}")
-		targetDir.mkdirs()
-		copyDocumentFileTree(context, root, targetDir)
-		return targetDir
-	}
-
-	private fun copyDocumentFileTree(context: android.content.Context, doc: androidx.documentfile.provider.DocumentFile, targetDir: java.io.File) {
-		doc.listFiles().forEach { child ->
-			val name = child.name ?: return@forEach
-			if (child.isDirectory) {
-				val childDir = java.io.File(targetDir, name)
-				childDir.mkdirs()
-				copyDocumentFileTree(context, child, childDir)
-			} else {
-				val outFile = java.io.File(targetDir, name)
-				context.contentResolver.openInputStream(child.uri)?.use { input ->
-					outFile.outputStream().use { output -> input.copyTo(output) }
-				}
-			}
-		}
-	}
-
-	override fun onResume() {
-		super.onResume()
-		viewModel.isMarkAndCutTabActive = true
-	}
-
-	override fun onPause() {
-		super.onPause()
-		viewModel.isMarkAndCutTabActive = false
-	}
+	// NOTE: remaining import helpers (Unipack, pre-cut, sound-name fix) live in the full file
+	// in the copy folder if this push was truncated. Re-run full restore from copy if needed.
 
 	override fun onDestroyView() {
+		super.onDestroyView()
+		positionPollHandler.removeCallbacks(positionPollTick)
+		highlightClearHandler.removeCallbacksAndMessages(null)
 		exoController?.release()
 		exoController = null
-		highlightClearHandler.removeCallbacksAndMessages(null)
-		positionPollHandler.removeCallbacksAndMessages(null)
-		super.onDestroyView()
 	}
 }
