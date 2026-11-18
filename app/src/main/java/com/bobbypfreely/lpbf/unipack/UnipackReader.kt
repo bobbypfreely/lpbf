@@ -1,4 +1,3 @@
-
 package com.bobbypfreely.lpbf.unipack
 
 import com.bobbypfreely.lpbf.marking.ButtonRef
@@ -17,7 +16,7 @@ data class UnipackInfo(
 	val website: String?,
 )
 
-/** One keySound line, already converted to LPBF's 0-indexed ButtonRef. */
+/** One keySound line as 0-based ButtonRef (loop/wormhole keep UniPad meaning). */
 data class UnipackKeySoundEntry(
 	val button: ButtonRef,
 	val soundRelativePath: String,
@@ -38,7 +37,7 @@ data class UnipackReadResult(
 	val warnings: List<String>,
 )
 
-/** Reads a Unipack zip/folder -- format taken from Unipad's own UniPackFolder.kt so */
+/** Reads a Unipack folder/zip (info, keySound, keyLED, autoPlay). Soft on missing pieces. */
 object UnipackReader {
 
 	fun extractZip(zipFile: File, targetDir: File) {
@@ -66,25 +65,25 @@ object UnipackReader {
 			rootFolder.listFiles()?.singleOrNull { it.isDirectory && hasPackFiles(it) } ?: rootFolder
 		}
 
+		val warnings = mutableListOf<String>()
+
 		val infoFile = actualRoot.listFiles()?.firstOrNull { it.isFile && it.name.equals("info", ignoreCase = true) }
 		val keySoundFile = actualRoot.listFiles()?.firstOrNull { it.isFile && it.name.equals("keySound", ignoreCase = true) }
-			?: throw IllegalArgumentException("Not a Unipack -- 'keySound' file missing")
-		val soundsDir = actualRoot.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("sounds", ignoreCase = true) }
-			?: throw IllegalArgumentException("Not a Unipack -- 'sounds' folder missing")
+		var soundsDir = actualRoot.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("sounds", ignoreCase = true) }
 		val keyLedDir = actualRoot.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("keyLed", ignoreCase = true) }
 		val autoPlayFile = actualRoot.listFiles()?.firstOrNull { it.isFile && it.name.equals("autoPlay", ignoreCase = true) }
 
-		var title = actualRoot.name.ifBlank { "Untitled" }
-		var producerName = "Unknown"
+		// Missing info → synthesize defaults (do not fail)
+		var title = actualRoot.name.takeIf { it.isNotBlank() } ?: "Imported"
+		var producerName = "LPBF"
 		var buttonX = 8
 		var buttonY = 8
 		var chainCount = 8
 		var squareButton = true
 		var website: String? = null
-		val warnings = mutableListOf<String>()
 
 		if (infoFile == null) {
-			warnings.add("info file missing — defaults used (title/producer/grid); export will write a new info")
+			warnings.add("info: missing — using defaults (8x8, 8 chains, title='${title}')")
 		} else {
 			BufferedReader(InputStreamReader(infoFile.inputStream())).useLines { lines ->
 				lines.forEach { raw ->
@@ -105,55 +104,71 @@ object UnipackReader {
 					}
 				}
 			}
-			if (title.isEmpty()) warnings.add("info: title missing")
-			if (producerName.isEmpty()) warnings.add("info: producerName missing")
-			if (buttonX == 0 || buttonY == 0) warnings.add("info: buttonX/buttonY missing")
-			if (chainCount !in 1..24) warnings.add("info: chain count ($chainCount) out of expected 1-24 range")
+			if (title.isEmpty()) {
+				title = actualRoot.name.takeIf { it.isNotBlank() } ?: "Imported"
+				warnings.add("info: title empty — used folder name")
+			}
+			if (producerName.isEmpty()) {
+				producerName = "LPBF"
+				warnings.add("info: producerName empty — used LPBF")
+			}
+			if (buttonX == 0 || buttonY == 0) {
+				buttonX = if (buttonX == 0) 8 else buttonX
+				buttonY = if (buttonY == 0) 8 else buttonY
+				warnings.add("info: buttonX/buttonY missing — using 8x8")
+			}
+			if (chainCount !in 1..24) {
+				warnings.add("info: chain count ($chainCount) out of expected 1-24 range — clamping")
+				chainCount = chainCount.coerceIn(1, 24).let { if (it == 0) 8 else it }
+			}
 		}
 
+		// Missing keySound → empty map + warning (do not fail)
 		val entries = mutableListOf<UnipackKeySoundEntry>()
-		BufferedReader(InputStreamReader(keySoundFile.inputStream())).useLines { lines ->
-			lines.forEach { raw ->
-				val s = raw.trim()
-				if (s.isEmpty()) return@forEach
-				val split = s.trim().split("\\s+".toRegex())
-				if (split.size < 4) return@forEach
-				try {
-					// Disk is 1-indexed → ButtonRef is 0-indexed
-					val c = split[0].toInt() - 1
-					val x = split[1].toInt() - 1   // vertical (row)
-					val y = split[2].toInt() - 1   // horizontal (column)
-					val soundURL = split[3]
-					// Keep Unipad loop semantics exactly (do NOT subtract 1)
-					val loop = if (split.size >= 5) split[4].toInt() else 1
-					// Wormhole on disk is 1-based chain number; store 0-based, -1 = none
-					val wormhole = if (split.size >= 6) {
-						val rawWh = split[5].toInt()
-						if (rawWh <= 0) -1 else rawWh - 1
-					} else {
-						-1
-					}
-					entries.add(
-						UnipackKeySoundEntry(
-							button = ButtonRef(chain = c, x = x, y = y),
-							soundRelativePath = soundURL,
-							loop = loop,
-							wormhole = wormhole,
+		if (keySoundFile == null) {
+			warnings.add("keySound: missing — no pad map yet (import sounds folder or fix names later)")
+		} else {
+			BufferedReader(InputStreamReader(keySoundFile.inputStream())).useLines { lines ->
+				lines.forEach { raw ->
+					val s = raw.trim()
+					if (s.isEmpty()) return@forEach
+					val split = s.trim().split("\\s+".toRegex())
+					if (split.size < 4) return@forEach
+					try {
+						// Disk is 1-indexed → ButtonRef is 0-indexed
+						val c = split[0].toInt() - 1
+						val x = split[1].toInt() - 1   // vertical (row)
+						val y = split[2].toInt() - 1   // horizontal (column)
+						val soundURL = split[3]
+						// Keep Unipad loop semantics exactly (do NOT subtract 1)
+						val loop = if (split.size >= 5) split[4].toInt() else 1
+						// Wormhole on disk is 1-based chain number; store 0-based, -1 = none
+						val wormhole = if (split.size >= 6) {
+							val rawWh = split[5].toInt()
+							if (rawWh <= 0) -1 else rawWh - 1
+						} else {
+							-1
+						}
+						entries.add(
+							UnipackKeySoundEntry(
+								button = ButtonRef(chain = c, x = x, y = y),
+								soundRelativePath = soundURL,
+								loop = loop,
+								wormhole = wormhole,
+							)
 						)
-					)
-				} catch (e: Exception) {
-					warnings.add("keySound: [$s] couldn't be parsed (${e.message})")
+					} catch (e: Exception) {
+						warnings.add("keySound: [$s] couldn't be parsed (${e.message})")
+					}
 				}
 			}
 		}
 
-		if (entries.isNotEmpty()) {
-			val maxChain = entries.maxOf { it.button.chain } + 1
-			if (chainCount < maxChain) chainCount = maxChain.coerceIn(1, 24)
+		// Missing sounds/ → still return a dir so repair/resolve can run; warn
+		if (soundsDir == null) {
+			soundsDir = File(actualRoot, "sounds").also { it.mkdirs() }
+			warnings.add("sounds: folder missing — created empty sounds/ (add files or merge)")
 		}
-		if (buttonX <= 0) buttonX = 8
-		if (buttonY <= 0) buttonY = 8
-		if (chainCount !in 1..24) chainCount = 8
 
 		val autoPlayProgram = try {
 			autoPlayFile?.let {
@@ -185,6 +200,8 @@ object UnipackReader {
 
 	private fun hasPackFiles(dir: File): Boolean {
 		val names = dir.listFiles()?.map { it.name.lowercase() } ?: return false
-		return names.contains("info") || names.contains("keysound")
+		// Accept partial packs so soft import can synthesize the rest
+		return names.contains("info") || names.contains("keysound") ||
+			names.contains("sounds") || names.contains("autoplay") || names.contains("keyled")
 	}
 }
