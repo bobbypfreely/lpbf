@@ -912,4 +912,4 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		positionPollHandler.removeCallbacksAndMessages(null)
 		super.onDestroyView()
 	}
-}
+} 
