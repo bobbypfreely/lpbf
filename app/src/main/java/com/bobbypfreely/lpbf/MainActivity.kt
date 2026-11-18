@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity() {
 	private val baseBottomMarginDp = 12
 	private val drawerWidthDp = 240
 	private val presetsWidthDp = 132
-	private val bottomDrawerHeightDp = 340
+	private val bottomDrawerHeightDp = 520
 	private val soundLines = mutableListOf<String>()
 	private val ledLines = mutableListOf<String>()
 	private lateinit var harness: com.bobbypfreely.lpbf.harness.LpbfHarness
@@ -495,7 +495,11 @@ class MainActivity : AppCompatActivity() {
 				if (!autoPlayRunning) return@postDelayed
 				if (b != null) {
 					launchpadGrid.setPadLit(b.x, b.y, 0xFF00ADB5.toInt(), "${idx + 1}")
+					sendHardwarePadLed(b.x, b.y, velocity = 45)
 					playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
+					autoPlayHandler.postDelayed({
+						if (autoPlayRunning) sendHardwarePadLed(b.x, b.y, velocity = 0)
+					}, hold)
 				} else {
 					modeLabel.text = "AP cut ${idx + 1}/${cuts.size}"
 					playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
@@ -539,8 +543,9 @@ class MainActivity : AppCompatActivity() {
 					i++
 				}
 				is com.bobbypfreely.lpbf.unipack.AutoPlayElement.Off -> {
-					// One-shots already timed by PadVoicePool duration; Off is for hold/LED.
+					// One-shots already timed by PadVoicePool duration; Off clears hold/LED.
 					launchpadGrid.setPadLit(el.button.x, el.button.y, 0xFF263238.toInt(), null)
+					sendHardwarePadLed(el.button.x, el.button.y, velocity = 0)
 					i++
 				}
 				is com.bobbypfreely.lpbf.unipack.AutoPlayElement.Chain -> {
@@ -558,25 +563,62 @@ class MainActivity : AppCompatActivity() {
 		if (matches.isEmpty()) return
 		val pick = matches[occurrenceIndex % matches.size]
 		val seg = pick.value
-		launchpadGrid.setPadLit(button.x, button.y, 0xFF00ADB5.toInt(), "${occurrenceIndex + 1}")
+		val label = "${occurrenceIndex + 1}"
+		// Virtual grid + physical Launchpad pad LED
+		launchpadGrid.setPadLit(button.x, button.y, 0xFF00ADB5.toInt(), label)
+		sendHardwarePadLed(button.x, button.y, velocity = 45)
 		// Discrete Unipack WAV avoids concat-timeline bleed (matches UniPad sample play)
 		val discrete = viewModel.soundPathFor(button, occurrenceIndex)
 		val dur = seg.durationMs.coerceAtLeast(1)
+		val pattern = seg.lightPattern
 		if (discrete != null) {
 			try {
 				harness.fireFile(discrete, dur)
 			} catch (e: Exception) {
 				android.util.Log.e("MainActivity", "AP discrete fire failed", e)
-				playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
+				playPadPreview(seg.startMs, seg.endMs, pattern)
 			}
 		} else {
-			playPadPreview(seg.startMs, seg.endMs, seg.lightPattern)
+			playPadPreview(seg.startMs, seg.endMs, pattern)
+		}
+		// Pattern (if any) drives full keyLED on grid + hardware via LightModule
+		if (pattern != null && ::harness.isInitialized) {
+			try {
+				harness.lights.play(pattern, dur)
+			} catch (e: Exception) {
+				android.util.Log.w("MainActivity", "AP lights.play failed", e)
+			}
+		}
+		// Clear single-pad LED after clip duration so AP doesn't leave pads stuck on
+		autoPlayHandler.postDelayed({
+			if (!autoPlayRunning) return@postDelayed
+			sendHardwarePadLed(button.x, button.y, velocity = 0)
+		}, dur.toLong().coerceAtLeast(80L))
+	}
+
+	/** Pad LED on connected Launchpad (no-op if nothing connected). */
+	private fun sendHardwarePadLed(x: Int, y: Int, velocity: Int) {
+		try {
+			MidiConnection.driver.sendPadLed(x, y, velocity.coerceIn(0, 127))
+		} catch (e: Exception) {
+			android.util.Log.w("MainActivity", "sendPadLed ($x,$y) v=$velocity failed", e)
 		}
 	}
 
 	private fun stopAutoPlaySequence() {
 		autoPlayRunning = false
 		autoPlayHandler.removeCallbacksAndMessages(null)
+		// Clear hardware pads so AP stop doesn't leave LEDs lit
+		try {
+			for (x in 0 until 8) {
+				for (y in 0 until 8) {
+					MidiConnection.driver.sendPadLed(x, y, 0)
+				}
+			}
+		} catch (_: Exception) { /* no device */ }
+		if (::harness.isInitialized) {
+			try { harness.lights.clear() } catch (_: Exception) {}
+		}
 		updateModeChrome()
 		refreshSideLists()
 	}
@@ -630,9 +672,10 @@ class MainActivity : AppCompatActivity() {
 			else -> (baseSideMarginDp * density).toInt()
 		}
 		val screenH = resources.displayMetrics.heightPixels
-		val maxBottom = (screenH * 0.42f).toInt()
+		// Allow up to ~55% of screen so the waveform is actually usable
+		val maxBottom = (screenH * 0.55f).toInt()
 		val bottomWant = (bottomDrawerHeightDp * density).toInt()
-		val bottom = if (bottomOpen) minOf(bottomWant, maxBottom).coerceAtLeast((240 * density).toInt()) else (baseBottomMarginDp * density).toInt()
+		val bottom = if (bottomOpen) minOf(bottomWant, maxBottom).coerceAtLeast((280 * density).toInt()) else (baseBottomMarginDp * density).toInt()
 		if (bottomOpen) {
 			val bLp = bottomDrawer.layoutParams
 			if (bLp.height != bottom) {
@@ -694,4 +737,4 @@ class MainActivity : AppCompatActivity() {
 		presetsFilled = true
 		viewModel.logDebug("Presets panel: ${patterns.size} shortcuts")
 	}
-} 
+}
