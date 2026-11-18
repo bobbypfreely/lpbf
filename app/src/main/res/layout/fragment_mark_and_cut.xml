@@ -3,88 +3,84 @@
 	android:layout_width="match_parent"
 	android:layout_height="match_parent"
 	android:orientation="vertical"
-	android:padding="8dp">
+	android:padding="6dp">
 
+	<!-- Single menu replaces the old fat Import/Pre-Cut/Unipack/Folder/Recover row -->
 	<LinearLayout
 		android:layout_width="match_parent"
 		android:layout_height="wrap_content"
 		android:orientation="horizontal"
 		android:gravity="center_vertical">
-
 		<Button
 			android:id="@+id/menuButton"
 			android:layout_width="wrap_content"
 			android:layout_height="36dp"
-			android:text="Menu"
-			android:textSize="12sp"
 			android:minWidth="0dp"
 			android:paddingStart="14dp"
-			android:paddingEnd="14dp" />
-
+			android:paddingEnd="14dp"
+			android:text="Menu"
+			android:textSize="13sp" />
 		<TextView
 			android:id="@+id/statusText"
 			android:layout_width="0dp"
 			android:layout_height="wrap_content"
 			android:layout_weight="1"
 			android:layout_marginStart="8dp"
-			android:text="Menu → New project to begin."
+			android:text="Menu → Import / Recover / Unipack"
 			android:textSize="12sp"
 			android:textColor="#CCCCDD"
-			android:maxLines="2" />
+			android:maxLines="2"
+			android:ellipsize="end" />
 	</LinearLayout>
 
 	<TextView
 		android:id="@+id/connectionText"
 		android:layout_width="match_parent"
 		android:layout_height="wrap_content"
-		android:layout_marginTop="2dp"
 		android:text="No Launchpad connected"
 		android:textSize="11sp"
 		android:textColor="#8888AA"
 		android:gravity="center_horizontal" />
 
+	<!-- Waveform gets the remaining height — this is the whole point of the drawer -->
 	<FrameLayout
 		android:id="@+id/waveformContainer"
 		android:layout_width="match_parent"
 		android:layout_height="0dp"
-		android:layout_weight="1"
 		android:layout_marginTop="4dp"
+		android:layout_weight="1"
+		android:minHeight="160dp"
 		android:background="#0F0F1A">
-
 		<com.bobbypfreely.lpbf.waveform.WaveformView
 			android:id="@+id/waveformView"
 			android:layout_width="match_parent"
-			android:layout_height="match_parent" />
-
+			android:layout_height="match_parent"
+			android:layout_gravity="center" />
 		<com.bobbypfreely.lpbf.waveform.MarkOverlayView
 			android:id="@+id/markOverlay"
 			android:layout_width="match_parent"
-			android:layout_height="match_parent" />
+			android:layout_height="match_parent"
+			android:layout_gravity="center" />
 	</FrameLayout>
 
 	<LinearLayout
 		android:layout_width="match_parent"
 		android:layout_height="wrap_content"
 		android:layout_marginTop="4dp"
-		android:layout_marginStart="8dp"
-		android:layout_marginEnd="8dp"
 		android:orientation="horizontal"
 		android:gravity="center_vertical">
-
 		<Button
 			android:id="@+id/restartButton"
 			android:layout_width="40dp"
 			android:layout_height="36dp"
 			android:text="R"
 			android:textSize="12sp" />
-
 		<SeekBar
 			android:id="@+id/playbackSeekBar"
 			android:layout_width="0dp"
 			android:layout_height="wrap_content"
 			android:layout_weight="1"
 			android:layout_marginStart="4dp" />
-
 		<TextView
 			android:id="@+id/waveformTimeText"
 			android:layout_width="wrap_content"
@@ -102,10 +98,7 @@
 		android:layout_width="match_parent"
 		android:layout_height="wrap_content"
 		android:layout_marginTop="4dp"
-		android:layout_marginStart="8dp"
-		android:layout_marginEnd="8dp"
 		android:orientation="horizontal">
-
 		<Button
 			android:id="@+id/zoomOutButton"
 			android:layout_width="0dp"
@@ -113,7 +106,6 @@
 			android:layout_weight="1"
 			android:text="- Zoom"
 			android:textSize="12sp" />
-
 		<Button
 			android:id="@+id/playPauseButton"
 			android:layout_width="0dp"
@@ -123,7 +115,6 @@
 			android:layout_marginEnd="4dp"
 			android:text="Play"
 			android:textSize="13sp" />
-
 		<Button
 			android:id="@+id/zoomInButton"
 			android:layout_width="0dp"
@@ -138,28 +129,24 @@
 		android:layout_width="match_parent"
 		android:layout_height="40dp"
 		android:layout_marginTop="4dp"
-		android:layout_marginStart="8dp"
-		android:layout_marginEnd="8dp"
 		android:text="Mark Cut Here"
 		android:textSize="13sp" />
 
+	<!-- Compact debug — was eating 48dp every time -->
 	<ScrollView
 		android:id="@+id/debugScroll"
 		android:layout_width="match_parent"
-		android:layout_height="48dp"
-		android:layout_marginTop="4dp"
-		android:layout_marginStart="8dp"
-		android:layout_marginEnd="8dp"
+		android:layout_height="28dp"
+		android:layout_marginTop="2dp"
 		android:background="#1A1A2E">
-
 		<TextView
 			android:id="@+id/debugLog"
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
-			android:padding="4dp"
+			android:padding="3dp"
 			android:fontFamily="monospace"
 			android:textColor="#00ADB5"
 			android:textIsSelectable="true"
-			android:textSize="10sp" />
+			android:textSize="9sp" />
 	</ScrollView>
 </LinearLayout>
