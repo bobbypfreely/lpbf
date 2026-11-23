@@ -93,6 +93,11 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		if (uri != null) importUnipackFolder(uri)
 	}
 
+	/** Ableton Live project folder (contains .als + Samples/). */
+	private val pickAbletonProject = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+		if (uri != null) importAbletonProject(uri)
+	}
+
 	override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
 		super.onViewCreated(view, savedInstanceState)
 
@@ -366,7 +371,8 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		popup.menu.add(0, 3, 2, "Import pack (zip)")
 		popup.menu.add(0, 4, 3, "Import folder")
 		popup.menu.add(0, 5, 4, "Import pre-cut clips")
-		popup.menu.add(0, 6, 5, "Exit")
+		popup.menu.add(0, 6, 5, "Import Ableton project")
+		popup.menu.add(0, 7, 6, "Exit")
 		popup.setOnMenuItemClickListener { item ->
 			when (item.itemId) {
 				1 -> pickAudio.launch(arrayOf("audio/*"))
@@ -374,7 +380,8 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				3 -> pickUnipack.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*"))
 				4 -> pickUnipackFolder.launch(null)
 				5 -> pickPreCutTracks.launch(arrayOf("audio/*"))
-				6 -> activity?.finish()
+				6 -> pickAbletonProject.launch(null)
+				7 -> activity?.finish()
 			}
 			true
 		}
@@ -515,6 +522,84 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 			} catch (e: Exception) {
 				android.util.Log.e("MarkAndCutFragment", "Pre-cut import failed", e)
 				activity?.runOnUiThread { statusText.text = "Import FAILED: ${e.javaClass.simpleName}: ${e.message}" }
+			}
+		}
+	}
+
+	/**
+	 * Ableton Live project folder → main audio on waveform + cut marks from beat times.
+	 * XML times are beats; ms = beats * 60000 / BPM. Marks placed via dropMark.
+	 */
+	private fun importAbletonProject(treeUri: Uri) {
+		val context = requireContext().applicationContext
+		statusText.text = "Importing Ableton project…"
+		thread(name = "lpbf-import-ableton") {
+			try {
+				val projectDir = copyDocumentTreeToCache(context, treeUri)
+				val alsFile = projectDir.walkTopDown().maxDepth(3).firstOrNull {
+					it.isFile && it.name.endsWith(".als", ignoreCase = true)
+				} ?: run {
+					// Sometimes the tree root *is* only the .als parent with Samples
+					projectDir.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".als", ignoreCase = true) }
+				}
+				if (alsFile == null) {
+					activity?.runOnUiThread {
+						statusText.text = "No .als file in that folder. Pick the Ableton project folder (the one with the .als)."
+					}
+					return@thread
+				}
+				activity?.runOnUiThread { statusText.text = "Reading ${alsFile.name}…" }
+
+				val result = AlsReader.read(alsFile, projectDir)
+				val audio = result.audioFile
+				if (audio == null || !audio.isFile) {
+					activity?.runOnUiThread {
+						val hint = result.warnings.joinToString("; ").ifEmpty { "no audio path resolved" }
+						statusText.text = "Ableton: no audio file on disk. $hint"
+					}
+					return@thread
+				}
+
+				// Copy audio into stable import dir (cache trees can be wiped)
+				val stableAudio = java.io.File(importDir(context), "als_${System.currentTimeMillis()}_${audio.name}")
+				audio.copyTo(stableAudio, overwrite = true)
+
+				activity?.runOnUiThread { statusText.text = "Decoding ${audio.name} @ ${result.bpm} BPM…" }
+				val decoded = com.bobbypfreely.lpbf.audio.AudioDecoder.decode(stableAudio.absolutePath)
+
+				activity?.runOnUiThread {
+					viewModel.setDecodedAudio(decoded, stableAudio.absolutePath)
+
+					// Place cut marks at note/clip times (already ms, sorted unique)
+					var placed = 0
+					for (mark in result.marks) {
+						val t = mark.timeMs
+						if (t <= 0) continue
+						if (t >= decoded.totalDurationMs) continue
+						val before = viewModel.markingSession.value?.segmentCount ?: 0
+						viewModel.dropMark(t)
+						val after = viewModel.markingSession.value?.segmentCount ?: 0
+						if (after > before) placed++
+					}
+					// Close last segment to end of track if we have marks
+					val session = viewModel.markingSession.value
+					if (session != null && session.segmentCount > 0 && session.lastMarkMs() < decoded.totalDurationMs) {
+						viewModel.dropMark(decoded.totalDurationMs)
+					}
+
+					val warn = if (result.warnings.isEmpty()) "" else " ⚠ ${result.warnings.joinToString("; ")}"
+					statusText.text =
+						"Ableton '${result.title}' @ ${result.bpm} BPM — " +
+							"${placed} cut(s) from beat markers, audio=${audio.name}.$warn"
+					viewModel.logDebug(
+						"Als import: bpm=${result.bpm} marksXml=${result.marks.size} placed=$placed audio=${audio.name}"
+					)
+				}
+			} catch (e: Exception) {
+				android.util.Log.e("MarkAndCutFragment", "Ableton import failed", e)
+				activity?.runOnUiThread {
+					statusText.text = "Ableton import FAILED: ${e.javaClass.simpleName}: ${e.message}"
+				}
 			}
 		}
 	}
@@ -912,4 +997,4 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		positionPollHandler.removeCallbacksAndMessages(null)
 		super.onDestroyView()
 	}
-} 
+}
