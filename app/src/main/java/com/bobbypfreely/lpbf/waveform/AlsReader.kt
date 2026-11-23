@@ -1,292 +1,654 @@
 package com.bobbypfreely.lpbf.waveform
 
+import android.util.Xml
+import org.xmlpull.v1.XmlPullParser
 import java.io.BufferedInputStream
 import java.io.File
+import java.io.InputStream
 import java.util.zip.GZIPInputStream
 
 /**
- * Ableton Live .als → LPBF translate (phase 1: audio track + cut marks).
+ * Ableton Live .als -> LPBF translate.
  *
- * .als is gzip-compressed UTF-8 XML. Times are in **beats**.
- * ms = beats * 60000 / BPM
+ * A .als is gzip-compressed XML (sometimes plain XML). This reader streams it
+ * with XmlPullParser and never holds the unzipped document in one String.
  *
- * We do not clone the DAW — we pull the main audio + performance hit times
- * and mark the waveform so the user can map / export a Unipack.
+ * Times inside the set are beats. [beatsToMs] is the conversion:
+ * ms = beats * 60000.0 / bpm.
+ *
+ * MidiNoteEvent Time is clip-relative. [noteToTimelineBeat] adds the enclosing
+ * clip CurrentStart (arrangement position). That is the single place to change
+ * if a real project shows the offset is wrong.
  */
 object AlsReader {
 
-	data class AlsClipMark(
-		/** Absolute ms on the imported audio timeline */
+	data class Mark(
 		val timeMs: Int,
-		/** Optional duration of the note/clip in ms (0 if unknown) */
-		val durationMs: Int = 0,
-		/** MIDI note if this mark came from a MidiNoteEvent */
+		/** Timeline beat that [timeMs] was converted from (clip start + note Time). */
+		val beat: Double,
+		val durationMs: Int,
 		val midiNote: Int? = null,
-		val velocity: Int = 100,
+		val velocity: Int = 0,
 	)
 
-	data class AlsAudioRef(
-		/** Path as written in the XML (relative or absolute) */
-		val rawPath: String,
-		val fileName: String,
+	/**
+	 * One pad hit that can later become a keyLED on/off (chain x y file, delay in ms).
+	 * [colorIndex] is a Launchpad palette index, currently equal to velocity.
+	 * x: 0 left .. 7 right. y: 0 bottom .. 7 top.
+	 */
+	data class LightEvent(
+		val x: Int,
+		val y: Int,
+		val chain: Int,
+		val velocity: Int,
+		val colorIndex: Int,
+		val startMs: Int,
+		val durationMs: Int,
+		val midiNote: Int,
+		val beat: Double,
 	)
+
+	/** 8x8 pad. y = 0 is the bottom row. chain is 0-based (Unipack chain 1). */
+	data class PadCoord(val x: Int, val y: Int, val chain: Int = 0)
 
 	data class AlsReadResult(
 		val title: String,
 		val bpm: Double,
-		/** Best-guess main audio file (resolved under projectDir when possible) */
 		val audioFile: File?,
-		/** All audio refs found (for debugging / multi-clip later) */
-		val allAudioRefs: List<AlsAudioRef>,
-		/** Sorted unique mark times derived from MIDI/clip beats → ms */
-		val marks: List<AlsClipMark>,
+		val marks: List<Mark>,
+		val lightEvents: List<LightEvent>,
 		val warnings: List<String>,
 	)
 
-	private val AUDIO_EXT = listOf(".wav", ".wave", ".aif", ".aiff", ".mp3", ".flac", ".ogg", ".m4a")
+	private val AUDIO_EXT = arrayOf(
+		".wav", ".wave", ".aif", ".aiff", ".mp3", ".flac", ".ogg", ".m4a", ".aac",
+	)
 
-	/**
-	 * @param alsFile  the .als file (already on disk)
-	 * @param projectDir  folder that contains the .als and usually Samples/ — used to resolve relative paths
-	 */
+	private val LIGHT_TRACK = Regex("light|\\bled\\b|launchpad|unipad|keyled", RegexOption.IGNORE_CASE)
+
 	fun read(alsFile: File, projectDir: File = alsFile.parentFile ?: alsFile): AlsReadResult {
 		val warnings = mutableListOf<String>()
-		val xml = try {
-			gunzipToString(alsFile)
-		} catch (e: Exception) {
-			// Some exports are plain XML
-			try {
-				alsFile.readText(Charsets.UTF_8)
-			} catch (e2: Exception) {
-				return AlsReadResult(
-					title = alsFile.nameWithoutExtension,
-					bpm = 120.0,
-					audioFile = null,
-					allAudioRefs = emptyList(),
-					marks = emptyList(),
-					warnings = listOf("Could not read .als: ${e.message}"),
-				)
+		val title = alsFile.nameWithoutExtension
+		val parsed = try {
+			openAlsStream(alsFile).use { input ->
+				val parser = Xml.newPullParser()
+				try {
+					parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+				} catch (_: Exception) {
+				}
+				parser.setInput(input, "UTF-8")
+				parse(parser)
 			}
+		} catch (e: Exception) {
+			return AlsReadResult(
+				title = title,
+				bpm = 120.0,
+				audioFile = null,
+				marks = emptyList(),
+				lightEvents = emptyList(),
+				warnings = listOf("Could not read .als: ${e.message ?: e.javaClass.simpleName}"),
+			)
 		}
 
-		if (!xml.contains("<Ableton") && !xml.contains("LiveSet")) {
-			warnings.add("File does not look like Ableton Live XML")
+		if (!parsed.sawAbleton) warnings.add("File does not look like Ableton Live XML")
+
+		val bpm = parsed.bpm ?: 120.0.also {
+			warnings.add("Tempo not found - assuming 120 BPM")
 		}
 
-		val bpm = extractTempo(xml) ?: 120.0.also {
-			warnings.add("Tempo not found — assuming 120 BPM")
+		if (parsed.audioRefs.isEmpty()) {
+			warnings.add("No audio FileRef paths found in the project")
 		}
+		val audioFile = resolveMainAudio(parsed.audioRefs, projectDir, alsFile, warnings)
 
-		val title = extractTitle(xml) ?: alsFile.nameWithoutExtension
-
-		val audioRefs = extractAudioRefs(xml)
-		if (audioRefs.isEmpty()) {
-			warnings.add("No audio FileRef/SampleRef paths found in XML")
-		}
-
-		val audioFile = resolveMainAudio(audioRefs, projectDir, alsFile, warnings)
-
-		// MidiNoteEvent Time/Duration are in beats → ms
-		val marks = extractMidiMarks(xml, bpm)
-			.ifEmpty {
-				// Fallback: AudioClip times if no MIDI
-				extractAudioClipMarks(xml, bpm).also {
-					if (it.isEmpty()) warnings.add("No MidiNoteEvent or AudioClip times found — no cuts to mark")
-					else warnings.add("No MIDI notes — marks from AudioClip times")
+		val notes = parsed.arrangementNotes.ifEmpty {
+			parsed.otherNotes.also {
+				if (it.isNotEmpty() && parsed.arrangementNotes.isEmpty()) {
+					warnings.add("No arrangement MIDI - marks from session clips")
 				}
 			}
+		}
+
+		val primaryMarks = if (notes.isNotEmpty()) {
+			notes.map { it.toMark(bpm) }
+		} else {
+			val starts = parsed.arrangementAudioStarts.ifEmpty { parsed.otherAudioStarts }
+			if (starts.isEmpty()) {
+				warnings.add("No MidiNoteEvent or AudioClip times found - no cuts to mark")
+				emptyList()
+			} else {
+				warnings.add("No MIDI notes - marks from AudioClip times")
+				starts.map { beat ->
+					Mark(timeMs = beatsToMs(beat, bpm), beat = beat, durationMs = 0)
+				}
+			}
+		}
+
+		val asdMarks = audioFile?.let { readAsdMarks(it, warnings) }.orEmpty()
+		val marks = mergeMarks(primaryMarks, asdMarks)
+
+		val lightNotes = lightNotesFor(parsed, notes)
+		if (lightNotes.isEmpty() && (parsed.arrangementNotes.isNotEmpty() || parsed.otherNotes.isNotEmpty())) {
+			warnings.add("No MIDI track name contained 'Light' - light events skipped")
+		}
+		var unmappedLights = 0
+		val lightEvents = ArrayList<LightEvent>(lightNotes.size)
+		for (note in lightNotes) {
+			val midi = note.midiNote
+			val pad = if (midi == null) null else midiNoteToPad(midi)
+			if (midi == null || pad == null) {
+				unmappedLights++
+				continue
+			}
+			val beat = noteToTimelineBeat(note.noteTime, note.clipStart)
+			lightEvents.add(
+				LightEvent(
+					x = pad.x,
+					y = pad.y,
+					chain = pad.chain,
+					velocity = note.velocity,
+					colorIndex = velocityToColorIndex(note.velocity),
+					startMs = beatsToMs(beat, bpm),
+					durationMs = beatsToMs(note.durationBeats, bpm),
+					midiNote = midi,
+					beat = beat,
+				)
+			)
+		}
+		if (unmappedLights > 0) {
+			warnings.add(
+				"$unmappedLights light note(s) outside MIDI 60-123 (C4 = bottom-left) - not mapped to pads"
+			)
+		}
+		lightEvents.sortBy { it.startMs }
 
 		return AlsReadResult(
 			title = title,
 			bpm = bpm,
 			audioFile = audioFile,
-			allAudioRefs = audioRefs,
 			marks = marks,
+			lightEvents = lightEvents,
 			warnings = warnings,
 		)
 	}
 
-	fun gunzipToString(alsFile: File): String {
-		BufferedInputStream(alsFile.inputStream()).use { bis ->
-			// .als is gzip; detect magic 1f 8b
-			bis.mark(4)
-			val b0 = bis.read()
-			val b1 = bis.read()
-			bis.reset()
-			val stream = if (b0 == 0x1f && b1 == 0x8b) {
-				GZIPInputStream(bis)
-			} else {
-				bis
-			}
-			return stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-		}
-	}
-
-	/** ms = beats * 60000 / bpm */
+	/** ms = beats * 60000.0 / bpm */
 	fun beatsToMs(beats: Double, bpm: Double): Int {
-		if (bpm <= 0.0) return 0
-		return (beats * 60000.0 / bpm).toInt().coerceAtLeast(0)
-	}
-
-	// ---- XML field extraction (Live schema varies by version; attribute scan is resilient) ----
-
-	private fun extractTempo(xml: String): Double? {
-		// Common: <Manual Value="95" /> inside Tempo; or Tempo attribute
-		val patterns = listOf(
-			Regex("""<Tempo[^>]*>[\s\S]*?<Manual\s+Value="([0-9.]+)""""),
-			Regex("""<Tempo\s+Value="([0-9.]+)""""),
-			Regex("""<AutoColorTempo[^>]*Value="([0-9.]+)""""),
-			Regex("""Name="Tempo"[^>]*>[\s\S]*?<Manual\s+Value="([0-9.]+)""""),
-			Regex("""<ArrangerLocator[^>]*>[\s\S]{0,200}?Tempo[\s\S]{0,200}?Value="([0-9.]+)""""),
-		)
-		for (re in patterns) {
-			val m = re.find(xml)
-			if (m != null) {
-				val v = m.groupValues[1].toDoubleOrNull()
-				if (v != null && v in 20.0..400.0) return v
-			}
-		}
-		// Last resort: first Manual Value that looks like BPM near "Tempo"
-		val near = Regex("""Tempo[\s\S]{0,400}?Value="([0-9.]+)"""").find(xml)
-		val v = near?.groupValues?.get(1)?.toDoubleOrNull()
-		if (v != null && v in 20.0..400.0) return v
-		return null
-	}
-
-	private fun extractTitle(xml: String): String? {
-		// LiveSet sometimes has no title; use first meaningful Name on the set
-		Regex("""<Ableton[^>]*MajorVersion="(\d+)"""").find(xml) // version anchor only
-		return null // caller falls back to filename
-	}
-
-	private fun extractAudioRefs(xml: String): List<AlsAudioRef> {
-		val found = linkedMapOf<String, AlsAudioRef>()
-		// Ableton FileRef uses RelativePath / Path / AbsolutePath / OriginalFileRef
-		val pathRe = Regex(
-			"""<(?:RelativePath|Path|AbsolutePath|OriginalFileRef)\s+Value="([^"]+)"""",
-			RegexOption.IGNORE_CASE,
-		)
-		for (m in pathRe.findAll(xml)) {
-			val raw = m.groupValues[1].trim()
-			if (raw.isEmpty()) continue
-			val normalized = raw.replace('\\', '/')
-			if (!AUDIO_EXT.any { normalized.endsWith(it, ignoreCase = true) }) continue
-			val name = normalized.substringAfterLast('/')
-			found.putIfAbsent(normalized, AlsAudioRef(rawPath = normalized, fileName = name))
-		}
-		// Name elements that look like audio files
-		val nameRe = Regex("""<Name\s+Value="([^"]+\.(?:wav|wave|aif|aiff|mp3|flac|ogg|m4a))"""", RegexOption.IGNORE_CASE)
-		for (m in nameRe.findAll(xml)) {
-			val name = m.groupValues[1].trim().replace('\\', '/')
-			val justName = name.substringAfterLast('/')
-			found.putIfAbsent(name, AlsAudioRef(rawPath = name, fileName = justName))
-		}
-		return found.values.toList()
-	}
-
-	private fun extractMidiMarks(xml: String, bpm: Double): List<AlsClipMark> {
-		// <MidiNoteEvent Time="1.5" Duration="0.25" Velocity="100" ... />
-		val re = Regex(
-			"""<MidiNoteEvent\s+([^>]+)/?>""",
-			RegexOption.IGNORE_CASE,
-		)
-		val attr = { s: String, key: String ->
-			Regex("""$key="([^"]+)"""", RegexOption.IGNORE_CASE).find(s)?.groupValues?.get(1)
-		}
-		val out = mutableListOf<AlsClipMark>()
-		for (m in re.findAll(xml)) {
-			val body = m.groupValues[1]
-			val timeBeats = attr(body, "Time")?.toDoubleOrNull() ?: continue
-			val durBeats = attr(body, "Duration")?.toDoubleOrNull() ?: 0.0
-			// Key / Note / Pitch — Live uses different attrs across versions
-			val note = attr(body, "Key")?.toIntOrNull()
-				?: attr(body, "Note")?.toIntOrNull()
-				?: attr(body, "Pitch")?.toIntOrNull()
-			val vel = attr(body, "Velocity")?.toDoubleOrNull()?.toInt()?.coerceIn(1, 127) ?: 100
-			out.add(
-				AlsClipMark(
-					timeMs = beatsToMs(timeBeats, bpm),
-					durationMs = beatsToMs(durBeats, bpm),
-					midiNote = note,
-					velocity = vel,
-				)
-			)
-		}
-		return out
-			.sortedBy { it.timeMs }
-			.distinctBy { it.timeMs } // one mark per time for cut boundaries
-	}
-
-	private fun extractAudioClipMarks(xml: String, bpm: Double): List<AlsClipMark> {
-		// CurrentStart / Time on AudioClip — often in beats
-		val marks = mutableListOf<AlsClipMark>()
-		val re = Regex("""<(?:AudioClip|ClipSlot)[^>]*?CurrentStart\s+Value="([0-9.]+)"""", RegexOption.IGNORE_CASE)
-		for (m in re.findAll(xml)) {
-			val beats = m.groupValues[1].toDoubleOrNull() ?: continue
-			marks.add(AlsClipMark(timeMs = beatsToMs(beats, bpm)))
-		}
-		val timeRe = Regex("""<AudioClip[^>]*?\sTime="([0-9.]+)"""", RegexOption.IGNORE_CASE)
-		for (m in timeRe.findAll(xml)) {
-			val beats = m.groupValues[1].toDoubleOrNull() ?: continue
-			marks.add(AlsClipMark(timeMs = beatsToMs(beats, bpm)))
-		}
-		return marks.sortedBy { it.timeMs }.distinctBy { it.timeMs }
+		if (bpm <= 0.0 || beats.isNaN() || bpm.isNaN()) return 0
+		val ms = beats * 60000.0 / bpm
+		if (ms.isNaN() || ms.isInfinite()) return 0
+		return ms.toInt().coerceAtLeast(0)
 	}
 
 	/**
-	 * Prefer a long "full track" file over one-shot drum samples when several refs exist.
-	 * Resolve relative paths under projectDir (and common Samples/ layouts).
-	 * Falls back to scanning the whole project folder for any audio if XML paths don't resolve.
+	 * Timeline beat for a note. Live stores MidiNoteEvent Time relative to the
+	 * clip; CurrentStart is the clip's arrangement beat. Pass 0 when there is
+	 * no enclosing clip.
 	 */
+	fun noteToTimelineBeat(noteTimeBeats: Double, clipStartBeat: Double): Double {
+		return clipStartBeat + noteTimeBeats
+	}
+
+	/**
+	 * Pad dialect (change this function, not the call sites):
+	 * MIDI 60 / C4 is the bottom-left pad of the 8x8.
+	 * Four 4x4 banks, 16 notes each, in order:
+	 *   0 bottom-left, 1 top-left, 2 bottom-right (columns 5-8), 3 top-right.
+	 * Inside a bank, notes run left to right, then upward (row 0 = bottom).
+	 * chain stays 0 until a chain split is chosen.
+	 * Returns null outside 60..123.
+	 */
+	fun midiNoteToPad(note: Int): PadCoord? {
+		if (note !in 60..123) return null
+		val index = note - 60
+		val bank = index / 16
+		val within = index % 16
+		val col = within % 4
+		val row = within / 4
+		val originX: Int
+		val originY: Int
+		when (bank) {
+			0 -> { originX = 0; originY = 0 }
+			1 -> { originX = 0; originY = 4 }
+			2 -> { originX = 4; originY = 0 }
+			else -> { originX = 4; originY = 4 }
+		}
+		return PadCoord(x = originX + col, y = originY + row, chain = 0)
+	}
+
+	/** Launchpad color index. 1:1 with MIDI velocity until a palette is chosen. */
+	fun velocityToColorIndex(velocity: Int): Int = velocity.coerceIn(0, 127)
+
+	private fun openAlsStream(alsFile: File): InputStream {
+		val raw = BufferedInputStream(alsFile.inputStream())
+		raw.mark(4)
+		val b0 = raw.read()
+		val b1 = raw.read()
+		raw.reset()
+		return if (b0 == 0x1f && b1 == 0x8b) GZIPInputStream(raw) else raw
+	}
+
+	private class Frame(val name: String) {
+		var nameLocked: Boolean = false
+		var trackName: String? = null
+		var clipStart: Double? = null
+		var arrangement: Boolean = false
+		var midiKey: Int? = null
+		val pendingNotes = mutableListOf<PendingNote>()
+	}
+
+	private class PendingNote(
+		val time: Double,
+		val duration: Double,
+		val velocity: Int,
+		val explicitNote: Int?,
+	)
+
+	private class RawNote(
+		val noteTime: Double,
+		val clipStart: Double,
+		val durationBeats: Double,
+		val midiNote: Int?,
+		val velocity: Int,
+		val arrangement: Boolean,
+		val light: Boolean,
+	) {
+		fun toMark(bpm: Double): Mark {
+			val beat = noteToTimelineBeat(noteTime, clipStart)
+			return Mark(
+				timeMs = beatsToMs(beat, bpm),
+				beat = beat,
+				durationMs = beatsToMs(durationBeats, bpm),
+				midiNote = midiNote,
+				velocity = velocity,
+			)
+		}
+	}
+
+	private class AudioRef(val rawPath: String, val fileName: String)
+
+	private class Parsed(
+		val bpm: Double?,
+		val sawAbleton: Boolean,
+		val audioRefs: List<AudioRef>,
+		val arrangementNotes: List<RawNote>,
+		val otherNotes: List<RawNote>,
+		val arrangementAudioStarts: List<Double>,
+		val otherAudioStarts: List<Double>,
+	)
+
+	private class ParseState {
+		val stack = ArrayDeque<Frame>()
+		var bpm: Double? = null
+		var bpmFromMaster: Boolean = false
+		var sawAbleton: Boolean = false
+		val audioRefs = LinkedHashMap<String, AudioRef>()
+		val arrangementNotes = mutableListOf<RawNote>()
+		val otherNotes = mutableListOf<RawNote>()
+		val arrangementAudioStarts = mutableListOf<Double>()
+		val otherAudioStarts = mutableListOf<Double>()
+
+		fun trackFrame(): Frame? = stack.lastOrNull {
+			it.name == "MidiTrack" || it.name == "AudioTrack" || it.name == "GroupTrack"
+		}
+
+		fun lightContext(): Boolean = stack.any { frame ->
+			(frame.name == "MidiTrack" || frame.name == "AudioTrack" || frame.name == "GroupTrack") &&
+				frame.trackName?.let { LIGHT_TRACK.containsMatchIn(it) } == true
+		}
+
+		fun inMaster(): Boolean = stack.any { it.name == "MasterTrack" }
+
+		fun addAudioStart(beat: Double, arrangement: Boolean) {
+			if (arrangement) arrangementAudioStarts.add(beat) else otherAudioStarts.add(beat)
+		}
+	}
+
+	private fun parse(parser: XmlPullParser): Parsed {
+		val state = ParseState()
+		var event = parser.eventType
+		while (event != XmlPullParser.END_DOCUMENT) {
+			when (event) {
+				XmlPullParser.START_TAG -> onStart(parser, state)
+				XmlPullParser.END_TAG -> onEnd(parser.name, state)
+			}
+			event = parser.next()
+		}
+		return Parsed(
+			bpm = state.bpm,
+			sawAbleton = state.sawAbleton,
+			audioRefs = state.audioRefs.values.toList(),
+			arrangementNotes = state.arrangementNotes,
+			otherNotes = state.otherNotes,
+			arrangementAudioStarts = state.arrangementAudioStarts,
+			otherAudioStarts = state.otherAudioStarts,
+		)
+	}
+
+	private fun onStart(parser: XmlPullParser, state: ParseState) {
+		val name = parser.name ?: return
+		if (name == "Ableton" || name == "LiveSet") state.sawAbleton = true
+		when (name) {
+			"Manual" -> captureTempo(parser, state)
+			"EffectiveName", "UserName" -> captureTrackName(parser, state, name)
+			"DeviceChain" -> state.trackFrame()?.nameLocked = true
+			"CurrentStart" -> captureCurrentStart(parser, state)
+			"MidiNoteEvent" -> captureNote(parser, state)
+			"MidiKey" -> captureMidiKey(parser, state)
+			"RelativePath", "Path", "AbsolutePath", "OriginalFileRef", "Name" ->
+				considerAudio(attr(parser, "Value"), state)
+		}
+		val frame = Frame(name)
+		if (name == "MidiClip" || name == "AudioClip") {
+			frame.arrangement = state.stack.any { it.name == "ArrangerAutomation" }
+			if (name == "MidiClip") {
+				frame.clipStart = attr(parser, "Time")?.toDoubleOrNull()
+					?: attr(parser, "CurrentStart")?.toDoubleOrNull()
+					?: 0.0
+			} else {
+				val inline = attr(parser, "CurrentStart")?.toDoubleOrNull()
+					?: attr(parser, "Time")?.toDoubleOrNull()
+				if (inline != null) state.addAudioStart(inline, frame.arrangement)
+			}
+		}
+		state.stack.addLast(frame)
+	}
+
+	private fun onEnd(name: String?, state: ParseState) {
+		if (name == "KeyTrack") {
+			val frame = state.stack.lastOrNull()
+			if (frame != null && frame.name == "KeyTrack") flushKeyTrack(frame, state)
+		}
+		if (name == null) {
+			state.stack.removeLastOrNull()
+			return
+		}
+		while (state.stack.isNotEmpty()) {
+			val top = state.stack.removeLast()
+			if (top.name == name) break
+		}
+	}
+
+	private fun captureTempo(parser: XmlPullParser, state: ParseState) {
+		if (state.stack.lastOrNull()?.name != "Tempo") return
+		val v = attr(parser, "Value")?.toDoubleOrNull() ?: return
+		if (v !in 20.0..400.0) return
+		if (state.inMaster()) {
+			if (!state.bpmFromMaster) {
+				state.bpm = v
+				state.bpmFromMaster = true
+			}
+		} else if (!state.bpmFromMaster && state.bpm == null) {
+			state.bpm = v
+		}
+	}
+
+	private fun captureTrackName(parser: XmlPullParser, state: ParseState, element: String) {
+		val track = state.trackFrame() ?: return
+		if (track.nameLocked) return
+		val value = attr(parser, "Value")?.trim().orEmpty()
+		if (value.isEmpty()) return
+		if (element == "UserName") track.trackName = value
+		else if (track.trackName.isNullOrEmpty()) track.trackName = value
+	}
+
+	private fun captureCurrentStart(parser: XmlPullParser, state: ParseState) {
+		val parent = state.stack.lastOrNull() ?: return
+		val beat = attr(parser, "Value")?.toDoubleOrNull() ?: return
+		when (parent.name) {
+			"MidiClip" -> parent.clipStart = beat
+			"AudioClip" -> state.addAudioStart(beat, parent.arrangement)
+		}
+	}
+
+	private fun captureNote(parser: XmlPullParser, state: ParseState) {
+		val time = attr(parser, "Time")?.toDoubleOrNull() ?: return
+		val duration = attr(parser, "Duration")?.toDoubleOrNull() ?: 0.0
+		val velocity = attr(parser, "Velocity")?.toDoubleOrNull()?.toInt()?.coerceIn(0, 127) ?: 100
+		val explicit = attr(parser, "Key")?.toIntOrNull()
+			?: attr(parser, "Note")?.toIntOrNull()
+			?: attr(parser, "Pitch")?.toIntOrNull()
+		val pending = PendingNote(time, duration, velocity, explicit)
+		val keyTrack = state.stack.lastOrNull { it.name == "KeyTrack" }
+		if (keyTrack == null || explicit != null || keyTrack.midiKey != null) {
+			emitNote(pending, explicit ?: keyTrack?.midiKey, state)
+		} else {
+			keyTrack.pendingNotes.add(pending)
+		}
+	}
+
+	private fun captureMidiKey(parser: XmlPullParser, state: ParseState) {
+		val keyTrack = state.stack.lastOrNull { it.name == "KeyTrack" } ?: return
+		val key = attr(parser, "Value")?.toIntOrNull() ?: return
+		keyTrack.midiKey = key
+		flushKeyTrack(keyTrack, state)
+	}
+
+	private fun flushKeyTrack(frame: Frame, state: ParseState) {
+		if (frame.pendingNotes.isEmpty()) return
+		val notes = frame.pendingNotes.toList()
+		frame.pendingNotes.clear()
+		for (pending in notes) {
+			emitNote(pending, pending.explicitNote ?: frame.midiKey, state)
+		}
+	}
+
+	private fun emitNote(pending: PendingNote, midiNote: Int?, state: ParseState) {
+		val clip = state.stack.lastOrNull { it.name == "MidiClip" }
+		val trackName = state.trackFrame()?.trackName
+		val light = state.lightContext() || (trackName != null && LIGHT_TRACK.containsMatchIn(trackName))
+		val raw = RawNote(
+			noteTime = pending.time,
+			clipStart = clip?.clipStart ?: 0.0,
+			durationBeats = pending.duration,
+			midiNote = midiNote,
+			velocity = pending.velocity,
+			arrangement = clip?.arrangement == true,
+			light = light,
+		)
+		if (raw.arrangement) state.arrangementNotes.add(raw) else state.otherNotes.add(raw)
+	}
+
+	private fun considerAudio(raw: String?, state: ParseState) {
+		if (raw.isNullOrBlank()) return
+		val normalized = raw.trim().replace('\\', '/')
+		if (!isAudioName(normalized)) return
+		val fileName = normalized.substringAfterLast('/')
+		state.audioRefs.putIfAbsent(normalized, AudioRef(normalized, fileName))
+	}
+
+	private fun isAudioName(path: String): Boolean {
+		val lower = path.lowercase()
+		return AUDIO_EXT.any { lower.endsWith(it) }
+	}
+
+	private fun attr(parser: XmlPullParser, key: String): String? {
+		for (i in 0 until parser.attributeCount) {
+			if (parser.getAttributeName(i)?.equals(key, ignoreCase = true) == true) {
+				return parser.getAttributeValue(i)
+			}
+		}
+		return null
+	}
+
+	private fun lightNotesFor(parsed: Parsed, markNotes: List<RawNote>): List<RawNote> {
+		val fromMarks = markNotes.filter { it.light }
+		if (fromMarks.isNotEmpty()) return fromMarks
+		return (parsed.arrangementNotes.asSequence() + parsed.otherNotes.asSequence())
+			.filter { it.light }
+			.toList()
+	}
+
+	private fun mergeMarks(primary: List<Mark>, extra: List<Mark>): List<Mark> {
+		val byTime = LinkedHashMap<Int, Mark>()
+		for (mark in primary.sortedBy { it.timeMs }) {
+			if (!byTime.containsKey(mark.timeMs)) byTime[mark.timeMs] = mark
+		}
+		for (mark in extra) {
+			if (!byTime.containsKey(mark.timeMs)) byTime[mark.timeMs] = mark
+		}
+		return byTime.values.sortedBy { it.timeMs }
+	}
+
+	private fun readAsdMarks(audio: File, warnings: MutableList<String>): List<Mark> {
+		val asd = siblingAsd(audio) ?: return emptyList()
+		return try {
+			val points = AsdReader.readWarpPoints(asd)
+			if (points.isEmpty()) {
+				warnings.add("ASD ${asd.name} had no readable warp markers - skipped")
+				emptyList()
+			} else {
+				warnings.add("Found ${points.size} warp marker(s) in ${asd.name}")
+				points.map { point ->
+					Mark(
+						timeMs = (point.seconds * 1000.0).toInt().coerceAtLeast(0),
+						beat = point.beats,
+						durationMs = 0,
+					)
+				}
+			}
+		} catch (e: Exception) {
+			warnings.add("ASD ${asd.name} could not be read (${e.message ?: e.javaClass.simpleName}) - skipped")
+			emptyList()
+		}
+	}
+
+	private fun siblingAsd(audio: File): File? {
+		val parent = audio.parentFile ?: return null
+		val candidates = listOf(
+			File(parent, audio.name + ".asd"),
+			File(parent, audio.nameWithoutExtension + ".asd"),
+		)
+		return candidates.firstOrNull { it.isFile }
+	}
+
 	private fun resolveMainAudio(
-		refs: List<AlsAudioRef>,
+		refs: List<AudioRef>,
 		projectDir: File,
 		alsFile: File,
 		warnings: MutableList<String>,
 	): File? {
-		// Always scan the project folder for audio files (Ableton paths are often absolute or broken after copy)
-		val onDisk = projectDir.walkTopDown().maxDepth(6).filter { f ->
-			f.isFile && AUDIO_EXT.any { f.name.endsWith(it, ignoreCase = true) }
-		}.toList()
-
+		val onDisk = if (projectDir.isDirectory) {
+			projectDir.walkTopDown().maxDepth(6).filter { file ->
+				file.isFile && isAudioName(file.name)
+			}.toList()
+		} else {
+			emptyList()
+		}
 		if (onDisk.isEmpty()) {
-			warnings.add("No audio files found under ${projectDir.absolutePath}. Pick the project folder that contains Samples/ (or Collect All and Save first).")
+			warnings.add("No audio files found under ${projectDir.absolutePath}")
 			if (refs.isNotEmpty()) {
-				warnings.add("XML referenced ${refs.size} path(s) but none exist on disk: ${refs.take(3).joinToString { it.fileName }}")
+				warnings.add(
+					"XML referenced ${refs.size} path(s) but none exist on disk: " +
+						refs.take(3).joinToString { it.fileName }
+				)
 			}
 			return null
 		}
-
-		// Try to match XML refs to files on disk by filename
 		val matched = refs.mapNotNull { ref ->
-			onDisk.firstOrNull { it.name.equals(ref.fileName, ignoreCase = true) }
-				?: resolveRef(ref, projectDir, alsFile)
+			resolveRef(ref, projectDir, alsFile)
+				?: onDisk.firstOrNull { it.name.equals(ref.fileName, ignoreCase = true) }
 		}.distinctBy { it.absolutePath }
-
 		val pool = if (matched.isNotEmpty()) matched else onDisk
-		val best = pool.maxByOrNull { it.length() }!!
-
-		if (matched.isEmpty() && refs.isNotEmpty()) {
-			warnings.add("XML paths didn't resolve — using largest audio on disk: ${best.name}")
+		val best = pool.maxByOrNull { it.length() } ?: return null
+		if (matched.isEmpty()) {
+			warnings.add("XML paths did not resolve - using largest audio on disk: ${best.name}")
 		} else if (pool.size > 1) {
-			warnings.add("Picked '${best.name}' (${pool.size} audio files found; largest wins for now)")
+			warnings.add("Picked '${best.name}' (${pool.size} audio files matched; largest wins)")
 		}
 		return best
 	}
 
-	private fun resolveRef(ref: AlsAudioRef, projectDir: File, alsFile: File): File? {
+	private fun resolveRef(ref: AudioRef, projectDir: File, alsFile: File): File? {
 		val raw = ref.rawPath.replace('\\', '/')
-		val candidates = mutableListOf<File>()
+		val candidates = ArrayList<File>(8)
 		if (raw.startsWith("/") || raw.matches(Regex("""^[A-Za-z]:/.*"""))) {
 			candidates.add(File(raw))
 		}
 		candidates.add(File(projectDir, raw))
-		candidates.add(File(projectDir, raw.substringAfterLast('/')))
+		candidates.add(File(projectDir, ref.fileName))
 		candidates.add(File(projectDir, "Samples/Imported/${ref.fileName}"))
 		candidates.add(File(projectDir, "Samples/Processed/${ref.fileName}"))
 		candidates.add(File(projectDir, "Samples/${ref.fileName}"))
-		candidates.add(File(alsFile.parentFile, ref.fileName))
-		candidates.add(File(alsFile.parentFile, "Samples/Imported/${ref.fileName}"))
+		val parent = alsFile.parentFile
+		if (parent != null) {
+			candidates.add(File(parent, ref.fileName))
+			candidates.add(File(parent, "Samples/Imported/${ref.fileName}"))
+		}
 		return candidates.firstOrNull { it.isFile }
+	}
+}
+
+/**
+ * Ableton .asd analysis files are proprietary binary. Live 9/10 store warp
+ * markers as the ASCII record "WarpMarker", 4 skipped bytes, then two
+ * little-endian doubles (seconds, beats). Live 12 often uses a different
+ * layout; if nothing plausible is found the caller skips with a warning.
+ */
+object AsdReader {
+
+	data class WarpPoint(val seconds: Double, val beats: Double)
+
+	private val NEEDLE = "WarpMarker".toByteArray(Charsets.US_ASCII)
+	private const val MAX_BYTES = 32 * 1024 * 1024
+
+	fun readWarpPoints(file: File): List<WarpPoint> {
+		if (!file.isFile) return emptyList()
+		if (file.length() > MAX_BYTES) {
+			throw IllegalArgumentException("larger than ${MAX_BYTES} bytes")
+		}
+		val data = file.readBytes()
+		val found = ArrayList<WarpPoint>()
+		var i = 0
+		val limit = data.size - NEEDLE.size
+		while (i <= limit) {
+			if (!matches(data, i, NEEDLE)) {
+				i++
+				continue
+			}
+			val pos = i + NEEDLE.size
+			if (pos + 4 + 16 <= data.size) {
+				val seconds = leDouble(data, pos + 4)
+				val beats = leDouble(data, pos + 12)
+				if (plausible(seconds, beats)) found.add(WarpPoint(seconds, beats))
+			}
+			i += NEEDLE.size
+		}
+		if (found.isNotEmpty()) return found.distinctBy { (it.seconds * 1000.0).toInt() }
+
+		// Some files carry the marker as text: SecTime="..." BeatTime="..."
+		val text = String(data, Charsets.ISO_8859_1)
+		val textPoints = Regex("""SecTime="([0-9eE.+\-]+)"\s+BeatTime="([0-9eE.+\-]+)"""")
+			.findAll(text)
+			.mapNotNull { match ->
+				val seconds = match.groupValues[1].toDoubleOrNull() ?: return@mapNotNull null
+				val beats = match.groupValues[2].toDoubleOrNull() ?: return@mapNotNull null
+				if (!plausible(seconds, beats)) null else WarpPoint(seconds, beats)
+			}
+			.distinctBy { (it.seconds * 1000.0).toInt() }
+			.toList()
+		return textPoints
+	}
+
+	private fun plausible(seconds: Double, beats: Double): Boolean {
+		if (!seconds.isFinite() || !beats.isFinite()) return false
+		if (seconds !in 0.0..(6.0 * 60.0 * 60.0)) return false
+		if (beats !in -1024.0..1_000_000.0) return false
+		return true
+	}
+
+	private fun matches(data: ByteArray, offset: Int, needle: ByteArray): Boolean {
+		for (n in needle.indices) {
+			if (data[offset + n] != needle[n]) return false
+		}
+		return true
+	}
+
+	private fun leDouble(data: ByteArray, offset: Int): Double {
+		var bits = 0L
+		for (i in 0 until 8) {
+			bits = bits or ((data[offset + i].toLong() and 0xffL) shl (8 * i))
+		}
+		return Double.fromBits(bits)
 	}
 }

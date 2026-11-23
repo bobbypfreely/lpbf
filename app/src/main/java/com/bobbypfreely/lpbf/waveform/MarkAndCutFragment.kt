@@ -527,8 +527,10 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 	}
 
 	/**
-	 * Ableton Live project folder → main audio on waveform + cut marks from beat times.
-	 * XML times are beats; ms = beats * 60000 / BPM. Marks placed via dropMark.
+	 * Ableton Live project folder -> main audio on the waveform + cut marks.
+	 * AlsReader streams the .als (no full-XML String). Beats become ms via
+	 * beats * 60000 / BPM. Marks are dropMark'd; 0 and anything past the
+	 * decoded duration are skipped.
 	 */
 	private fun importAbletonProject(treeUri: Uri) {
 		val context = requireContext().applicationContext
@@ -587,12 +589,23 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 						viewModel.dropMark(decoded.totalDurationMs)
 					}
 
-					val warn = if (result.warnings.isEmpty()) "" else " ⚠ ${result.warnings.joinToString("; ")}"
+					val warnBody = result.warnings.joinToString("; ")
+					val warn = if (warnBody.isEmpty()) {
+						""
+					} else {
+						" Warnings: " + if (warnBody.length > 400) warnBody.take(400) + "..." else warnBody
+					}
+					val lightNote = if (result.lightEvents.isEmpty()) {
+						""
+					} else {
+						", ${result.lightEvents.size} light event(s)"
+					}
 					statusText.text =
-						"Ableton '${result.title}' @ ${result.bpm} BPM — " +
-							"${placed} cut(s) from beat markers, audio=${audio.name}.$warn"
+						"Ableton '${result.title}' ${result.bpm} BPM, " +
+							"${result.marks.size} mark(s) ($placed on waveform)$lightNote.$warn"
 					viewModel.logDebug(
-						"Als import: bpm=${result.bpm} marksXml=${result.marks.size} placed=$placed audio=${audio.name}"
+						"Als import: bpm=${result.bpm} marks=${result.marks.size} placed=$placed " +
+							"lights=${result.lightEvents.size} audio=${audio.name}"
 					)
 				}
 			} catch (e: Exception) {
