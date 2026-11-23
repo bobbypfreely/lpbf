@@ -534,23 +534,18 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 	 */
 	private fun importAbletonProject(treeUri: Uri) {
 		val context = requireContext().applicationContext
-		statusText.text = "Importing Ableton project…"
+		statusText.text = "Importing Ableton project..."
 		thread(name = "lpbf-import-ableton") {
 			try {
 				val projectDir = copyDocumentTreeToCache(context, treeUri)
-				val alsFile = projectDir.walkTopDown().maxDepth(3).firstOrNull {
-					it.isFile && it.name.endsWith(".als", ignoreCase = true)
-				} ?: run {
-					// Sometimes the tree root *is* only the .als parent with Samples
-					projectDir.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".als", ignoreCase = true) }
-				}
+				val alsFile = AlsReader.findProjectAls(projectDir)
 				if (alsFile == null) {
 					activity?.runOnUiThread {
 						statusText.text = "No .als file in that folder. Pick the Ableton project folder (the one with the .als)."
 					}
 					return@thread
 				}
-				activity?.runOnUiThread { statusText.text = "Reading ${alsFile.name}…" }
+				activity?.runOnUiThread { statusText.text = "Reading ${alsFile.name}..." }
 
 				val result = AlsReader.read(alsFile, projectDir)
 				val audio = result.audioFile
@@ -566,7 +561,7 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 				val stableAudio = java.io.File(importDir(context), "als_${System.currentTimeMillis()}_${audio.name}")
 				audio.copyTo(stableAudio, overwrite = true)
 
-				activity?.runOnUiThread { statusText.text = "Decoding ${audio.name} @ ${result.bpm} BPM…" }
+				activity?.runOnUiThread { statusText.text = "Decoding ${audio.name} @ ${result.bpm} BPM..." }
 				val decoded = com.bobbypfreely.lpbf.audio.AudioDecoder.decode(stableAudio.absolutePath)
 
 				activity?.runOnUiThread {

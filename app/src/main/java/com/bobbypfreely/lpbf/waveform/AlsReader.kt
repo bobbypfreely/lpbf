@@ -66,6 +66,59 @@ object AlsReader {
 
 	private val LIGHT_TRACK = Regex("light|\\bled\\b|launchpad|unipad|keyled", RegexOption.IGNORE_CASE)
 
+	/**
+	 * Pick the project .als, not a copy under Backup/.
+	 * Prefers a shallow file whose name matches the folder (Live's "Name Project/Name.als").
+	 */
+	fun findProjectAls(projectDir: File): File? {
+		if (!projectDir.isDirectory) {
+			return projectDir.takeIf { it.isFile && it.name.endsWith(".als", ignoreCase = true) }
+		}
+		val all = projectDir.walkTopDown().maxDepth(4).filter { file ->
+			file.isFile && file.name.endsWith(".als", ignoreCase = true)
+		}.toList()
+		if (all.isEmpty()) return null
+		val primary = all.filter { !isBackupPath(it) }
+		val pool = if (primary.isNotEmpty()) primary else all
+		val dirName = projectDir.name
+			.removeSuffix(" Project")
+			.removeSuffix(" project")
+		return pool.minWithOrNull(
+			compareBy<File>(
+				{ relativeDepth(projectDir, it) },
+				{ nameScore(it, dirName) },
+				{ it.name.length },
+			)
+		)
+	}
+
+	private fun isBackupPath(file: File): Boolean {
+		var dir = file.parentFile
+		while (dir != null) {
+			if (dir.name.equals("Backup", ignoreCase = true)) return true
+			dir = dir.parentFile
+		}
+		return false
+	}
+
+	private fun relativeDepth(root: File, file: File): Int {
+		val rootPath = root.absolutePath
+		var depth = 0
+		var dir: File? = file.parentFile
+		while (dir != null) {
+			if (dir.absolutePath == rootPath) return depth
+			depth++
+			if (depth > 8) return 99
+			dir = dir.parentFile
+		}
+		return 99
+	}
+
+	/** 0 if the set name matches the folder, else 1. */
+	private fun nameScore(file: File, dirName: String): Int {
+		return if (file.nameWithoutExtension.equals(dirName, ignoreCase = true)) 0 else 1
+	}
+
 	fun read(alsFile: File, projectDir: File = alsFile.parentFile ?: alsFile): AlsReadResult {
 		val warnings = mutableListOf<String>()
 		val title = alsFile.nameWithoutExtension
@@ -92,8 +145,14 @@ object AlsReader {
 
 		if (!parsed.sawAbleton) warnings.add("File does not look like Ableton Live XML")
 
-		val bpm = parsed.bpm ?: 120.0.also {
-			warnings.add("Tempo not found - assuming 120 BPM")
+		val bpm = when {
+			parsed.bpm != null -> parsed.bpm
+			parsed.tempoAutomation != null -> parsed.tempoAutomation.also {
+				warnings.add("Tempo Manual missing - used automation BPM $it")
+			}
+			else -> 120.0.also {
+				warnings.add("Tempo not found - assuming 120 BPM")
+			}
 		}
 
 		if (parsed.audioRefs.isEmpty()) {
@@ -230,11 +289,16 @@ object AlsReader {
 
 	private class Frame(val name: String) {
 		var nameLocked: Boolean = false
+		var trackId: String? = null
 		var trackName: String? = null
+		/** Ableton TrackGroupId of this track. -1 means ungrouped. */
+		var groupId: String? = null
 		var clipStart: Double? = null
 		var arrangement: Boolean = false
 		var midiKey: Int? = null
 		val pendingNotes = mutableListOf<PendingNote>()
+		/** Live 10 FileRef path built from RelativePathElement Dir attributes. */
+		val relParts = ArrayList<String>(4)
 	}
 
 	private class PendingNote(
@@ -251,7 +315,10 @@ object AlsReader {
 		val midiNote: Int?,
 		val velocity: Int,
 		val arrangement: Boolean,
-		val light: Boolean,
+		val trackName: String?,
+		val groupId: String?,
+		/** True when an ancestor track element (nested XML) was already named as lights. */
+		val ancestorLight: Boolean,
 	) {
 		fun toMark(bpm: Double): Mark {
 			val beat = noteToTimelineBeat(noteTime, clipStart)
@@ -269,24 +336,45 @@ object AlsReader {
 
 	private class Parsed(
 		val bpm: Double?,
+		val tempoAutomation: Double?,
 		val sawAbleton: Boolean,
 		val audioRefs: List<AudioRef>,
 		val arrangementNotes: List<RawNote>,
 		val otherNotes: List<RawNote>,
 		val arrangementAudioStarts: List<Double>,
 		val otherAudioStarts: List<Double>,
-	)
+		val groupNames: Map<String, String>,
+		val groupParents: Map<String, String>,
+	) {
+		fun isLight(note: RawNote): Boolean {
+			if (note.ancestorLight) return true
+			if (note.trackName != null && LIGHT_TRACK.containsMatchIn(note.trackName)) return true
+			var id = note.groupId
+			var guard = 0
+			while (id != null && id != "-1" && guard++ < 16) {
+				val name = groupNames[id] ?: return false
+				if (LIGHT_TRACK.containsMatchIn(name)) return true
+				id = groupParents[id]
+			}
+			return false
+		}
+	}
 
 	private class ParseState {
 		val stack = ArrayDeque<Frame>()
 		var bpm: Double? = null
 		var bpmFromMaster: Boolean = false
+		var tempoAutomation: Double? = null
+		var tempoAutomationTime: Double = Double.POSITIVE_INFINITY
+		var tempoAutomationFromMaster: Boolean = false
 		var sawAbleton: Boolean = false
 		val audioRefs = LinkedHashMap<String, AudioRef>()
 		val arrangementNotes = mutableListOf<RawNote>()
 		val otherNotes = mutableListOf<RawNote>()
 		val arrangementAudioStarts = mutableListOf<Double>()
 		val otherAudioStarts = mutableListOf<Double>()
+		val groupNames = LinkedHashMap<String, String>()
+		val groupParents = LinkedHashMap<String, String>()
 
 		fun trackFrame(): Frame? = stack.lastOrNull {
 			it.name == "MidiTrack" || it.name == "AudioTrack" || it.name == "GroupTrack"
@@ -316,12 +404,15 @@ object AlsReader {
 		}
 		return Parsed(
 			bpm = state.bpm,
+			tempoAutomation = state.tempoAutomation,
 			sawAbleton = state.sawAbleton,
 			audioRefs = state.audioRefs.values.toList(),
 			arrangementNotes = state.arrangementNotes,
 			otherNotes = state.otherNotes,
 			arrangementAudioStarts = state.arrangementAudioStarts,
 			otherAudioStarts = state.otherAudioStarts,
+			groupNames = state.groupNames,
+			groupParents = state.groupParents,
 		)
 	}
 
@@ -335,10 +426,16 @@ object AlsReader {
 			"CurrentStart" -> captureCurrentStart(parser, state)
 			"MidiNoteEvent" -> captureNote(parser, state)
 			"MidiKey" -> captureMidiKey(parser, state)
+			"TrackGroupId" -> captureGroupId(parser, state)
+			"FloatEvent" -> captureTempoAutomation(parser, state)
+			"RelativePathElement" -> captureRelativePart(parser, state)
 			"RelativePath", "Path", "AbsolutePath", "OriginalFileRef", "Name" ->
 				considerAudio(attr(parser, "Value"), state)
 		}
 		val frame = Frame(name)
+		if (name == "MidiTrack" || name == "AudioTrack" || name == "GroupTrack") {
+			frame.trackId = attr(parser, "Id")
+		}
 		if (name == "MidiClip" || name == "AudioClip") {
 			frame.arrangement = state.stack.any { it.name == "ArrangerAutomation" }
 			if (name == "MidiClip") {
@@ -355,17 +452,19 @@ object AlsReader {
 	}
 
 	private fun onEnd(name: String?, state: ParseState) {
-		if (name == "KeyTrack") {
-			val frame = state.stack.lastOrNull()
-			if (frame != null && frame.name == "KeyTrack") flushKeyTrack(frame, state)
+		val top = state.stack.lastOrNull()
+		if (name == "KeyTrack" && top?.name == "KeyTrack") flushKeyTrack(top, state)
+		if (name == "GroupTrack" && top?.name == "GroupTrack") rememberGroup(top, state)
+		if (name == "RelativePath" && top?.name == "RelativePath" && top.relParts.isNotEmpty()) {
+			considerAudio(top.relParts.joinToString("/"), state)
 		}
 		if (name == null) {
 			state.stack.removeLastOrNull()
 			return
 		}
 		while (state.stack.isNotEmpty()) {
-			val top = state.stack.removeLast()
-			if (top.name == name) break
+			val popped = state.stack.removeLast()
+			if (popped.name == name) break
 		}
 	}
 
@@ -381,6 +480,45 @@ object AlsReader {
 		} else if (!state.bpmFromMaster && state.bpm == null) {
 			state.bpm = v
 		}
+	}
+
+	private fun captureTempoAutomation(parser: XmlPullParser, state: ParseState) {
+		if (state.bpmFromMaster) return
+		if (state.stack.none { it.name == "Tempo" }) return
+		val v = attr(parser, "Value")?.toDoubleOrNull() ?: return
+		if (v !in 20.0..400.0) return
+		val time = attr(parser, "Time")?.toDoubleOrNull() ?: 0.0
+		if (state.inMaster()) {
+			if (!state.tempoAutomationFromMaster || time < state.tempoAutomationTime) {
+				state.tempoAutomation = v
+				state.tempoAutomationTime = time
+				state.tempoAutomationFromMaster = true
+			}
+		} else if (!state.tempoAutomationFromMaster && time < state.tempoAutomationTime) {
+			state.tempoAutomation = v
+			state.tempoAutomationTime = time
+		}
+	}
+
+	private fun captureGroupId(parser: XmlPullParser, state: ParseState) {
+		val id = attr(parser, "Value")?.trim().orEmpty()
+		if (id.isEmpty() || id == "-1") return
+		state.trackFrame()?.groupId = id
+	}
+
+	private fun captureRelativePart(parser: XmlPullParser, state: ParseState) {
+		val part = attr(parser, "Dir") ?: attr(parser, "Value") ?: return
+		val trimmed = part.trim().trim('/')
+		if (trimmed.isEmpty()) return
+		state.stack.lastOrNull { it.name == "RelativePath" }?.relParts?.add(trimmed)
+	}
+
+	private fun rememberGroup(frame: Frame, state: ParseState) {
+		val id = frame.trackId ?: return
+		val name = frame.trackName ?: return
+		state.groupNames[id] = name
+		val parent = frame.groupId
+		if (parent != null && parent != "-1") state.groupParents[id] = parent
 	}
 
 	private fun captureTrackName(parser: XmlPullParser, state: ParseState, element: String) {
@@ -435,8 +573,7 @@ object AlsReader {
 
 	private fun emitNote(pending: PendingNote, midiNote: Int?, state: ParseState) {
 		val clip = state.stack.lastOrNull { it.name == "MidiClip" }
-		val trackName = state.trackFrame()?.trackName
-		val light = state.lightContext() || (trackName != null && LIGHT_TRACK.containsMatchIn(trackName))
+		val track = state.trackFrame()
 		val raw = RawNote(
 			noteTime = pending.time,
 			clipStart = clip?.clipStart ?: 0.0,
@@ -444,7 +581,9 @@ object AlsReader {
 			midiNote = midiNote,
 			velocity = pending.velocity,
 			arrangement = clip?.arrangement == true,
-			light = light,
+			trackName = track?.trackName,
+			groupId = track?.groupId,
+			ancestorLight = state.lightContext(),
 		)
 		if (raw.arrangement) state.arrangementNotes.add(raw) else state.otherNotes.add(raw)
 	}
@@ -472,10 +611,10 @@ object AlsReader {
 	}
 
 	private fun lightNotesFor(parsed: Parsed, markNotes: List<RawNote>): List<RawNote> {
-		val fromMarks = markNotes.filter { it.light }
+		val fromMarks = markNotes.filter { parsed.isLight(it) }
 		if (fromMarks.isNotEmpty()) return fromMarks
 		return (parsed.arrangementNotes.asSequence() + parsed.otherNotes.asSequence())
-			.filter { it.light }
+			.filter { parsed.isLight(it) }
 			.toList()
 	}
 
