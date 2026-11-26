@@ -293,6 +293,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 			}
 		}
 		_uiMode.value = mode
+		placingCuts = false
 		logDebug("UiMode -> $mode")
 	}
 
@@ -339,7 +340,7 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		when (_placeMode.value) {
 			PlaceMode.PLAY -> previewPad(x, y)
 			PlaceMode.HYBRID -> assignAndPreview(x, y)
-			PlaceMode.EDIT -> editPad(x, y)
+			PlaceMode.EDIT -> if (placingCuts) assignNextSegment(x, y) else editPad(x, y)
 			else -> assignNextSegment(x, y)
 		}
 	}
@@ -685,26 +686,97 @@ class ProjectViewModel : ViewModel(), PadInputListener {
 		_colorVelocityOverride.value = next
 	}
 
+	/** True after the Sounds key is tapped again: the next pad tap places the next unassigned cut. */
+	var placingCuts: Boolean = false
+		private set
+
+	enum class TopAction {
+		WAVE, PLAY, HYBRID, SOUNDS, CUTS, LIGHTS, LIGHT_EDIT, LOAD, AP, GUIDE, EXPORT,
+	}
+
+	data class TopKeyEvent(val action: TopAction, val seq: Int)
+
+	private val _topKey = MutableLiveData<TopKeyEvent?>(null)
+	val topKey: LiveData<TopKeyEvent?> = _topKey
+	private var topKeySeq = 0
+
+	private val keyHandler = android.os.Handler(android.os.Looper.getMainLooper())
+	private var apHoldFired = false
+	private val apHoldRunnable = Runnable {
+		apHoldFired = true
+		toggleGuideMode()
+		emitTop(TopAction.GUIDE)
+	}
+
+	private fun emitTop(action: TopAction) {
+		_topKey.value = TopKeyEvent(action, ++topKeySeq)
+	}
+
+	override fun onCleared() {
+		keyHandler.removeCallbacksAndMessages(null)
+		super.onCleared()
+	}
+
 	var isMarkAndCutTabActive: Boolean = false
 	private var arrowNavIndex: Int? = null
 
 	override fun onFunctionKeyTouch(f: Int, upDown: Boolean) {
-		if (!upDown) return
-		if (isLightshowTabActive && _selectedLightshowSegment.value != null) {
-			when (f) {
-				0 -> stepSaturation(+1)
-				1 -> stepSaturation(-1)
-				2 -> stepHue(-1)
-				3 -> stepHue(+1)
+		if (f == 5) {
+			if (upDown) {
+				apHoldFired = false
+				keyHandler.removeCallbacks(apHoldRunnable)
+				keyHandler.postDelayed(apHoldRunnable, 450)
+			} else {
+				keyHandler.removeCallbacks(apHoldRunnable)
+				if (!apHoldFired) emitTop(TopAction.AP)
+				apHoldFired = false
 			}
 			return
 		}
+		if (!upDown) return
 		when (f) {
-			0 -> enterUiMode(UiMode.PLAY)
-			1 -> enterUiMode(UiMode.EDIT)
-			2 -> enterUiMode(UiMode.LIGHTS)
-			3 -> enterUiMode(UiMode.HYBRID)
+			0 -> emitTop(TopAction.WAVE)
+			1 -> when (_uiMode.value) {
+				UiMode.PLAY -> {
+					enterUiMode(UiMode.HYBRID)
+					emitTop(TopAction.HYBRID)
+				}
+				UiMode.HYBRID -> {
+					enterUiMode(UiMode.PLAY)
+					emitTop(TopAction.PLAY)
+				}
+				else -> {
+					enterUiMode(UiMode.PLAY)
+					emitTop(TopAction.PLAY)
+				}
+			}
+			2 -> if (_uiMode.value != UiMode.LIGHTS) {
+				deselectLightshowSegment()
+				enterUiMode(UiMode.LIGHTS)
+				emitTop(TopAction.LIGHTS)
+			} else if (_selectedLightshowSegment.value == null) {
+				selectFirstLightCut()
+				emitTop(TopAction.LIGHT_EDIT)
+			}
+			3 -> if (_uiMode.value != UiMode.EDIT) {
+				enterUiMode(UiMode.EDIT)
+				emitTop(TopAction.SOUNDS)
+			} else if (!placingCuts) {
+				placingCuts = true
+				emitTop(TopAction.CUTS)
+			}
+			4 -> emitTop(TopAction.LOAD)
+			6 -> emitTop(TopAction.EXPORT)
 		}
+	}
+
+	private fun selectFirstLightCut() {
+		val session = _markingSession.value ?: return
+		val chain = _currentChain.value ?: 0
+		val onChain = session.segments().indexOfFirst { it.button?.chain == chain }
+		val index = if (onChain >= 0) onChain else if (session.segmentCount > 0) 0 else return
+		_selectedLightshowSegment.value = index
+		logDebug("Lights edit: cut ${index + 1}")
 	}
 
 	fun applyMultiClipImport(result: com.bobbypfreely.lpbf.audio.MultiClipImportResult) {

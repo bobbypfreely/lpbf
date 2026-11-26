@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
 	private lateinit var soundEditor: EditText
 	private var leftOpen = false
 	private var rightOpen = false
+	private var lastTopKeySeq = 0
 	private var bottomOpen = false
 	private val baseSideMarginDp = 12
 	private val baseBottomMarginDp = 12
@@ -160,6 +161,37 @@ class MainActivity : AppCompatActivity() {
 			viewModel.toggleGuideMode(); refreshSideLists(); updateModeChrome()
 		}
 		findViewById<View?>(R.id.btnDonate)?.setOnClickListener { showDonateDialog() }
+
+		viewModel.topKey.observe(this) { ev ->
+			if (ev == null || ev.seq == lastTopKeySeq) return@observe
+			lastTopKeySeq = ev.seq
+			when (ev.action) {
+				ProjectViewModel.TopAction.WAVE -> if (!bottomOpen) setBottomOpen(true)
+				ProjectViewModel.TopAction.PLAY -> {
+					stopAutoPlaySequence()
+					setLeftOpen(false); setRightOpen(false); setBottomOpen(false)
+					applyUiMode(viewModel.uiMode.value)
+				}
+				ProjectViewModel.TopAction.HYBRID,
+				ProjectViewModel.TopAction.SOUNDS,
+				ProjectViewModel.TopAction.LIGHTS -> applyUiMode(viewModel.uiMode.value)
+				ProjectViewModel.TopAction.CUTS,
+				ProjectViewModel.TopAction.LIGHT_EDIT -> applyUiMode(viewModel.uiMode.value)
+				ProjectViewModel.TopAction.LOAD -> showLoadMenu()
+				ProjectViewModel.TopAction.AP -> {
+					if (autoPlayRunning) stopAutoPlaySequence()
+					else {
+						viewModel.setAutoPlayEnabled(true)
+						startAutoPlaySequence()
+					}
+					refreshSideLists(); updateModeChrome()
+				}
+				ProjectViewModel.TopAction.GUIDE -> { refreshSideLists(); updateModeChrome() }
+				ProjectViewModel.TopAction.EXPORT -> exportUnipack()
+			}
+		}
+
+		viewModel.selectedLightshowSegment.observe(this) { applyUiMode(viewModel.uiMode.value) }
 
 		viewModel.autoPlayEnabled.observe(this) { refreshSideLists(); updateModeChrome() }
 		viewModel.guideMode.observe(this) { refreshSideLists(); updateModeChrome() }
@@ -317,11 +349,13 @@ class MainActivity : AppCompatActivity() {
 
 	private fun applyUiMode(mode: ProjectViewModel.UiMode?) {
 		val m = mode ?: ProjectViewModel.UiMode.PLAY
-		modeLabel.text = when (m) {
-			ProjectViewModel.UiMode.PLAY -> "PLAY"
-			ProjectViewModel.UiMode.EDIT -> "MAP / SOUND"
-			ProjectViewModel.UiMode.HYBRID -> "HYBRID"
-			ProjectViewModel.UiMode.LIGHTS -> "LIGHTS / LED"
+		modeLabel.text = when {
+			m == ProjectViewModel.UiMode.EDIT && viewModel.placingCuts -> "CUTS"
+			m == ProjectViewModel.UiMode.EDIT -> "SOUNDS"
+			m == ProjectViewModel.UiMode.LIGHTS && viewModel.selectedLightshowSegment.value != null -> "LIGHTS EDIT"
+			m == ProjectViewModel.UiMode.LIGHTS -> "LIGHTS"
+			m == ProjectViewModel.UiMode.HYBRID -> "HYBRID"
+			else -> "PLAY"
 		}
 		modeLabel.setTextColor(when (m) {
 			ProjectViewModel.UiMode.PLAY -> 0xFF00ADB5.toInt()
@@ -421,6 +455,12 @@ class MainActivity : AppCompatActivity() {
 			}
 		}
 		applyGuideHighlight()
+	}
+
+	private fun showLoadMenu() {
+		ensureWaveformFragment()
+		val frag = supportFragmentManager.findFragmentByTag("mark_and_cut") as? MarkAndCutFragment
+		frag?.openLoadMenu(launchpadGrid)
 	}
 
 	private fun exportUnipack() {

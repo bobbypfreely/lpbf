@@ -364,6 +364,10 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 	}
 
 
+	fun openLoadMenu(anchor: View) {
+		showMainMenu(anchor)
+	}
+
 	private fun showMainMenu(anchor: View) {
 		val popup = PopupMenu(requireContext(), anchor)
 		popup.menu.add(0, 1, 0, "New project — slice track")

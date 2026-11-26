@@ -30,11 +30,12 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 	private var pressedFunction: Int? = null
 
 	private val bezelPaint = Paint().apply { color = Color.parseColor("#0A0A10"); isAntiAlias = true }
-	private val cellPaintOff = Paint().apply { color = Color.parseColor("#2A2A3E"); isAntiAlias = true }
+	private val cellPaintOff = Paint().apply { color = Color.parseColor("#14141C"); isAntiAlias = true }
 	private val cellPaintPressed = Paint().apply { color = Color.parseColor("#00ADB5"); isAntiAlias = true }
 	private val chainPaintOff = Paint().apply { color = Color.parseColor("#1E1E30"); isAntiAlias = true }
 	private val chainPaintOn = Paint().apply { color = Color.parseColor("#00ADB5"); isAntiAlias = true }
-	private val topPaintOff = Paint().apply { color = Color.parseColor("#252538"); isAntiAlias = true }
+	private val topPaintOff = Paint().apply { color = Color.parseColor("#1A1A24"); isAntiAlias = true }
+	private val topPaintIdle = Paint().apply { color = Color.parseColor("#101018"); isAntiAlias = true }
 	private val topPaintPressed = Paint().apply { color = Color.parseColor("#7B68EE"); isAntiAlias = true }
 	private val labelPaint = Paint().apply {
 		color = Color.parseColor("#0F0F1A")
@@ -54,10 +55,9 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 		strokeWidth = 4f
 	}
 
-	private val gapPx = 7f
-	private val padCornerFraction = 0.28f
+	private val gapPx = 4f
+	private val padCornerFraction = 0.16f
 	private val chainSizeFraction = 0.55f
-	private val topSizeFraction = 0.88f
 
 	private var originX = 0f
 	private var originY = 0f
@@ -135,17 +135,24 @@ class VirtualLaunchpadGridView @JvmOverloads constructor(
 		val bezel = RectF(originX, originY, originX + cell * 9f, originY + cell * 9f)
 		canvas.drawRoundRect(bezel, 14f, 14f, bezelPaint)
 
-		val topDiameter = cell * topSizeFraction
+		val topDiameter = cell * 0.62f
 		val topRadius = topDiameter / 2f
+		val topLabels = arrayOf("\u25C0", "\u25B6", "\u25B2", "\u25BC", "Load", "AP", "Exp", "")
 		for (f in 0 until 8) {
 			val cx = mainLeft + f * cell + cell / 2f
 			val cy = originY + topStrip / 2f
-			val paint = if (pressedFunction == f) topPaintPressed else topPaintOff
+			val paint = when {
+				pressedFunction == f -> topPaintPressed
+				f == 7 -> topPaintIdle
+				else -> topPaintOff
+			}
 			canvas.drawCircle(cx, cy, topRadius, paint)
-			chainLabelPaint.color = if (pressedFunction == f) Color.parseColor("#0F0F1A") else Color.parseColor("#CCCCDD")
-			chainLabelPaint.textSize = cell * 0.28f
+			val label = topLabels[f]
+			if (label.isEmpty()) continue
+			chainLabelPaint.color = if (pressedFunction == f) Color.parseColor("#0F0F1A") else Color.parseColor("#D6D6E4")
+			chainLabelPaint.textSize = if (label.length > 1) cell * 0.20f else cell * 0.32f
 			val ty = cy - (chainLabelPaint.descent() + chainLabelPaint.ascent()) / 2
-			canvas.drawText((f + 1).toString(), cx, ty, chainLabelPaint)
+			canvas.drawText(label, cx, ty, chainLabelPaint)
 		}
 
 		val padCorner = cell * padCornerFraction
