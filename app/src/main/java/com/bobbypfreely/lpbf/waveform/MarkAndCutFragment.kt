@@ -3,6 +3,8 @@ package com.bobbypfreely.lpbf.waveform
 import android.app.AlertDialog
 import android.net.Uri
 import android.os.Bundle
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import android.view.View
 import android.widget.Button
 import android.widget.PopupMenu
@@ -376,7 +378,10 @@ class MarkAndCutFragment : Fragment(R.layout.fragment_mark_and_cut), WaveformVie
 		popup.menu.add(0, 4, 3, "Import folder")
 		popup.menu.add(0, 5, 4, "Import pre-cut clips")
 		popup.menu.add(0, 6, 5, "Import Ableton project")
-		popup.menu.add(0, 7, 6, "Exit")
+		val soon = SpannableString("Play Ableton project (coming very soon)")
+		soon.setSpan(ForegroundColorSpan(0xFF666677.toInt()), 0, soon.length, 0)
+		popup.menu.add(0, 8, 6, soon).isEnabled = false
+		popup.menu.add(0, 7, 7, "Exit")
 		popup.setOnMenuItemClickListener { item ->
 			when (item.itemId) {
 				1 -> pickAudio.launch(arrayOf("audio/*"))
